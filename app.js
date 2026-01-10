@@ -2,7 +2,7 @@ const canvas = document.getElementById('viz');
 const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
 
-const ENDPOINT = 'http://127.0.0.1:9770/post';
+const ENDPOINT = `http://${location.hostname}:9770/post`;
 const POLL_INTERVAL_MS = 2000;
 const INFLUENCE_RADIUS = window.CONFIG?.influenceRadius ?? 100; // custom units
 const POINT_RADIUS = window.CONFIG?.pointRadius ?? 4; // pixels

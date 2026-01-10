@@ -103,7 +103,7 @@ def main() -> None:
         target=run_server, args=(sensor_app, "0.0.0.0", 9660)
     )
     frontend_thread = threading.Thread(
-        target=run_server, args=(frontend_app, "127.0.0.1", 9770)
+        target=run_server, args=(frontend_app, "0.0.0.0", 9770)
     )
     sensor_thread.start()
     frontend_thread.start()
