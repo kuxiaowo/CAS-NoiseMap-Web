@@ -7,12 +7,23 @@ const POLL_INTERVAL_MS = 2000;
 const INFLUENCE_RADIUS = window.CONFIG?.influenceRadius ?? 100; // custom units
 const POINT_RADIUS = window.CONFIG?.pointRadius ?? 4; // pixels
 const SCALE = window.CONFIG?.scale ?? 1; // 1 unit = 1 px
+const MAP_IMAGE_SRC = window.CONFIG?.mapImage ?? 'map.png';
+const MAP_ANCHOR = window.CONFIG?.mapAnchor ?? { x: 662, y: 668 };
+const MAP_SCALE = Number(window.CONFIG?.mapScale ?? 1) || 1; // only affects background size
+const INFLUENCE_OPACITY = Number(window.CONFIG?.influenceOpacity ?? 1) || 1;
 const CELL_SIZE = 4; // pixels, smaller = higher quality, slower
 const OUTSIDE_COLOR = '#dcdcdc';
 const AXIS_COLOR = '#d6d6d6';
 
 let lastPoints = [];
 let lastUpdated = null;
+let mapLoaded = false;
+const mapImage = new Image();
+mapImage.onload = () => {
+  mapLoaded = true;
+  render(lastPoints);
+};
+mapImage.src = MAP_IMAGE_SRC;
 
 function resizeCanvas() {
   const dpr = window.devicePixelRatio || 1;
@@ -52,7 +63,23 @@ function render(points) {
   ctx.fillStyle = OUTSIDE_COLOR;
   ctx.fillRect(0, 0, width, height);
 
+  if (mapLoaded) {
+    const anchorX = Number(MAP_ANCHOR?.x) || 0;
+    const anchorY = Number(MAP_ANCHOR?.y) || 0;
+    const drawX = centerX - anchorX * SCALE * MAP_SCALE;
+    const drawY = centerY - anchorY * SCALE * MAP_SCALE;
+    ctx.drawImage(
+      mapImage,
+      drawX,
+      drawY,
+      mapImage.width * SCALE * MAP_SCALE,
+      mapImage.height * SCALE * MAP_SCALE
+    );
+  }
+
   // Influence rasterization (simple grid fill)
+  const influenceAlpha = Math.min(Math.max(INFLUENCE_OPACITY, 0), 1);
+  const originalAlpha = ctx.globalAlpha;
   for (let py = 0; py < height; py += CELL_SIZE) {
     for (let px = 0; px < width; px += CELL_SIZE) {
       const worldX = (px + CELL_SIZE / 2 - centerX) / SCALE;
@@ -80,11 +107,13 @@ function render(points) {
         const r = Math.round(mixR / sumWeight);
         const g = Math.round(mixG / sumWeight);
         const b = Math.round(mixB / sumWeight);
+        ctx.globalAlpha = influenceAlpha;
         ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
         ctx.fillRect(px, py, CELL_SIZE, CELL_SIZE);
       }
     }
   }
+  ctx.globalAlpha = originalAlpha;
 
   // Axes
   ctx.strokeStyle = AXIS_COLOR;
@@ -100,10 +129,12 @@ function render(points) {
   for (const p of points) {
     const screenX = centerX + p.x * SCALE;
     const screenY = centerY - p.y * SCALE;
-    ctx.fillStyle = `rgb(${p.rgb[0]}, ${p.rgb[1]}, ${p.rgb[2]})`;
+    const color = `rgb(${p.rgb[0]}, ${p.rgb[1]}, ${p.rgb[2]})`;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.arc(screenX, screenY, POINT_RADIUS, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.stroke();
   }
 }
 
