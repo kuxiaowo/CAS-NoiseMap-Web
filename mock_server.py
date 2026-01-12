@@ -103,7 +103,7 @@ async def register_sensor(request: Request):
         return JSONResponse(status_code=400, content={"error": "id out of range"})
     with LOCK:
         SENSOR_IPS[idx] = ip
-    print(f"[register] {format_status()}")
+    print(f"[register] {SENSOR_IPS}")
     return {"status": "ok"}
 
 
@@ -156,7 +156,7 @@ def poll_sensors() -> None:
                         continue
                     with LOCK:
                         NOISE_VALUES[idx] = noise
-            print(f"[poll] {format_status()}")
+            print(f"[poll] {format_status()},{SENSOR_IPS}")
 
         elapsed = time.monotonic() - start
         time.sleep(max(0, 2 - elapsed))
