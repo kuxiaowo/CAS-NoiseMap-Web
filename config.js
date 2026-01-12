@@ -6,7 +6,7 @@ const CONFIG = {
   mapImage: 'map.png',
   // Anchor (image pixel) that should coincide with the world origin (0, 0)
   mapAnchor: { x: 800, y: 780 },
-  mapScale: 0.6, // background map scaling factor (1 = original pixel size)
+  mapScale: 0.5, // background map scaling factor (1 = original pixel size)
 };
 
 window.CONFIG = CONFIG;

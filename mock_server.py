@@ -1,9 +1,12 @@
 import math
 import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+import requests
 import uvicorn
 
 MAX_ID = 100
@@ -17,6 +20,7 @@ RED_RGB = [255, 0, 0]
 COORD_RADIUS = 220
 
 NOISE_VALUES = [None] * (MAX_ID + 1)
+SENSOR_IPS = [None] * (MAX_ID + 1)
 X_COORDS = [0] * (MAX_ID + 1)
 Y_COORDS = [0] * (MAX_ID + 1)
 LOCK = threading.Lock()
@@ -53,39 +57,57 @@ def collect_points() -> list[dict]:
     return points
 
 
-sensor_app = FastAPI()
-frontend_app = FastAPI()
-frontend_app.add_middleware(
+API_PREFIX = "/api"
+
+app = FastAPI()
+app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
     allow_methods=["POST"],
     allow_headers=["*"],
 )
 
+def format_status() -> str:
+    with LOCK:
+        registrations = [
+            (idx, ip)
+            for idx, ip in enumerate(SENSOR_IPS)
+            if ip
+        ]
+        readings = [
+            (idx, NOISE_VALUES[idx])
+            for idx, _ in registrations
+            if NOISE_VALUES[idx] is not None
+        ]
+    reg_text = ", ".join([f"{idx}:{ip}" for idx, ip in registrations]) or "none"
+    noise_text = ", ".join([f"{idx}:{noise}" for idx, noise in readings]) or "none"
+    return f"registered=[{reg_text}] noise=[{noise_text}]"
 
-@sensor_app.post("/data")
-async def receive_data(request: Request):
+
+@app.post(f"{API_PREFIX}/register")
+async def register_sensor(request: Request):
     try:
         payload = await request.json()
     except Exception:
         return JSONResponse(status_code=400, content={"error": "invalid json"})
     if not isinstance(payload, dict):
         return JSONResponse(status_code=400, content={"error": "invalid payload"})
-    if "id" not in payload or "noise" not in payload:
-        return JSONResponse(status_code=400, content={"error": "missing id or noise"})
+    if "id" not in payload or "ip" not in payload:
+        return JSONResponse(status_code=400, content={"error": "missing id or ip"})
     try:
         idx = int(payload["id"])
-        noise = float(payload["noise"])
+        ip = str(payload["ip"]).strip()
     except (TypeError, ValueError):
-        return JSONResponse(status_code=400, content={"error": "invalid id or noise type"})
+        return JSONResponse(status_code=400, content={"error": "invalid id or ip type"})
     if idx < 0 or idx > MAX_ID:
         return JSONResponse(status_code=400, content={"error": "id out of range"})
     with LOCK:
-        NOISE_VALUES[idx] = noise
+        SENSOR_IPS[idx] = ip
+    print(f"[register] {format_status()}")
     return {"status": "ok"}
 
 
-@frontend_app.post("/post")
+@app.post(f"{API_PREFIX}/points")
 async def post_points():
     with LOCK:
         points = collect_points()
@@ -98,17 +120,52 @@ def run_server(app: FastAPI, host: str, port: int) -> None:
     server.run()
 
 
+def fetch_noise(ip: str) -> tuple[int | None, float | None]:
+    try:
+        response = requests.get(f"http://{ip}:8000/noise", timeout=3)
+        response.raise_for_status()
+        payload = response.json()
+    except Exception:
+        return None, None
+
+    if not isinstance(payload, dict):
+        return None, None
+    try:
+        idx = int(payload.get("id"))
+        noise = float(payload.get("noise"))
+    except (TypeError, ValueError):
+        return None, None
+    if idx < 0 or idx > MAX_ID:
+        return None, None
+    return idx, noise
+
+
+def poll_sensors() -> None:
+    while True:
+        start = time.monotonic()
+        with LOCK:
+            targets = [(idx, ip) for idx, ip in enumerate(SENSOR_IPS) if ip]
+
+        if targets:
+            max_workers = min(20, len(targets))
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = [executor.submit(fetch_noise, ip) for _, ip in targets]
+                for future in futures:
+                    idx, noise = future.result()
+                    if idx is None:
+                        continue
+                    with LOCK:
+                        NOISE_VALUES[idx] = noise
+            print(f"[poll] {format_status()}")
+
+        elapsed = time.monotonic() - start
+        time.sleep(max(0, 2 - elapsed))
+
+
 def main() -> None:
-    sensor_thread = threading.Thread(
-        target=run_server, args=(sensor_app, "0.0.0.0", 9660)
-    )
-    frontend_thread = threading.Thread(
-        target=run_server, args=(frontend_app, "0.0.0.0", 9770)
-    )
-    sensor_thread.start()
-    frontend_thread.start()
-    sensor_thread.join()
-    frontend_thread.join()
+    poller = threading.Thread(target=poll_sensors, daemon=True)
+    poller.start()
+    run_server(app, "0.0.0.0", 9880)
 
 
 if __name__ == "__main__":
