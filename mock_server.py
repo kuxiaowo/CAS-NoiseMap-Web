@@ -156,7 +156,7 @@ def poll_sensors() -> None:
                         continue
                     with LOCK:
                         NOISE_VALUES[idx] = noise
-            print(f"[poll] {format_status()},{SENSOR_IPS}")
+            print(f"[poll] {format_status()}")
 
         elapsed = time.monotonic() - start
         time.sleep(max(0, 2 - elapsed))

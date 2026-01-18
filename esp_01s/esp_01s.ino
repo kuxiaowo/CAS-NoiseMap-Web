@@ -1,6 +1,6 @@
-#include <ESP8266WiFi.h>
-#include <ESP8266HTTPClient.h>
-#include <ESP8266WebServer.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <WebServer.h>
 
 /* ================= 配置区 ================= */
 
@@ -9,25 +9,27 @@
 
 #define DEVICE_ID     1
 
-#define SERVER_IP     "192.168.43.241"
+#define SERVER_IP     "192.168.43.252"
 #define SERVER_PORT   9880
+
+#define MIC_PIN 14   // SD 接到 GPIO32
 
 bool registered = false;                 // 是否已成功注册
 unsigned long lastRegisterTry = 0;       // 上次尝试时间
+unsigned long lastRequestTime = 0;       // 上次接收到请求的时间
 const unsigned long REGISTER_INTERVAL = 3000; // 3 秒重试一次
-
+const unsigned long REQUEST_TIMEOUT = 600000; // 10分钟没有请求后重新注册（600,000毫秒）
 
 /* ========================================= */
 
-ESP8266WebServer server(8000);
+WebServer server(8000);
 
 float noise_value = 0.0;
 
-/* --------- 模拟噪声（你以后换成真传感器） --------- */
+
 float readNoise() {
-  noise_value += 1.0;
-  if (noise_value > 80) noise_value = 40;
-  return noise_value;
+  int adc = analogRead(MIC_PIN);   // 0 ~ 4095
+  return (float)adc;
 }
 
 /* ---------------- GET /noise ---------------- */
@@ -40,79 +42,80 @@ void handleNoise() {
   json += "}";
 
   server.send(200, "application/json", json);
+
+  // 更新最后请求的时间
+  lastRequestTime = millis();
 }
 
-/* --------------- 向服务器注册 ---------------- */
-bool registerToServer() {
-  if (WiFi.status() != WL_CONNECTED) return false;
+void registerToServer() {
+  if (WiFi.status() != WL_CONNECTED) return;
 
-  WiFiClient client;
   HTTPClient http;
+  String url = String("http://") + SERVER_IP + ":" + SERVER_PORT + "/api/register";
 
-  String url = "http://" + String(SERVER_IP) + ":" +
-               String(SERVER_PORT) + "/api/register";
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
 
   String payload = "{";
   payload += "\"id\":" + String(DEVICE_ID) + ",";
   payload += "\"ip\":\"" + WiFi.localIP().toString() + "\"";
   payload += "}";
 
-  http.begin(client, url);
-  http.addHeader("Content-Type", "application/json");
-
   int code = http.POST(payload);
+
+  if (code > 0) {
+    Serial.println("已向服务器注册");
+    registered = true;
+    lastRequestTime = millis();   // ⭐ 关键：当作一次“已联系”
+  } else {
+    Serial.println("注册失败");
+  }
+
   http.end();
-
-  Serial.print("[REGISTER] HTTP code = ");
-  Serial.println(code);
-
-  return code == 200;
 }
 
+/* ---------------- 重新注册 ---------------- */
+void tryReRegister() {
+  // 判断是否超过10分钟没有接收到请求
+  if (millis() - lastRequestTime > REQUEST_TIMEOUT) {
+    // 尝试重新注册
+    if (millis() - lastRegisterTry > REGISTER_INTERVAL) {
+      lastRegisterTry = millis();
+      // 重新注册的操作，比如通过HTTP请求发送注册信息
+      Serial.println("尝试重新注册...");
+      registerToServer();
+    }
+  }
+}
 
-
-/* ================== SETUP ================== */
 void setup() {
   Serial.begin(115200);
-  delay(100);
 
-  /* 连接 WiFi */
-  WiFi.mode(WIFI_STA);
+  analogReadResolution(12);              // ESP32 默认 12 位
+  analogSetPinAttenuation(MIC_PIN, ADC_11db); // 量程到 ~3.3V
+  // 连接到Wi-Fi
   WiFi.begin(WIFI_SSID, WIFI_PASS);
-
-  Serial.print("Connecting");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-
-  Serial.println("\nWiFi connected");
+  Serial.println("WiFi连接成功!");
   Serial.print("IP: ");
   Serial.println(WiFi.localIP());
 
+  registerToServer();   // 一连上注册
 
-  /* 启动 HTTP 服务 */
+  // 启动Web服务器
   server.on("/noise", HTTP_GET, handleNoise);
   server.begin();
 
-  Serial.println("Noise server started");
+  // 初始化时间
+  lastRequestTime = millis();
 }
 
-/* ================== LOOP ================== */
 void loop() {
   server.handleClient();
 
-  // Wi-Fi 掉线：状态清零
-  if (WiFi.status() != WL_CONNECTED) {
-    registered = false;
-    return;
-  }
-
-  // 还没注册成功：定时尝试
-  if (!registered && millis() - lastRegisterTry > REGISTER_INTERVAL) {
-    lastRegisterTry = millis();
-    Serial.println("Trying to register to server...");
-    registered = registerToServer();
-  }
+  // 检查是否需要重新注册
+  tryReRegister();
 }
-
