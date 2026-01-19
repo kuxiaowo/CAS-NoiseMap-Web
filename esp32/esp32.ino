@@ -12,27 +12,55 @@
 #define SERVER_IP     "192.168.43.252"
 #define SERVER_PORT   9880
 
-#define MIC_PIN 14   // SD 接到 GPIO32
+#define MIC_PIN 14        // 模拟麦克风接入引脚（ADC）
 
-bool registered = false;                 // 是否已成功注册
-unsigned long lastRegisterTry = 0;       // 上次尝试时间
-unsigned long lastRequestTime = 0;       // 上次接收到请求的时间
-const unsigned long REGISTER_INTERVAL = 3000; // 3 秒重试一次
-const unsigned long REQUEST_TIMEOUT = 600000; // 10分钟没有请求后重新注册（600,000毫秒）
+#define SAMPLE_COUNT 200  // 每次读取的采样点数
+#define SAMPLE_DELAY_US 200  // 采样间隔（us）
+
+bool registered = false;
+unsigned long lastRegisterTry = 0;
+unsigned long lastRequestTime = 0;
+const unsigned long REGISTER_INTERVAL = 3000;
+const unsigned long REQUEST_TIMEOUT = 600000;
 
 /* ========================================= */
 
 WebServer server(8000);
 
-float noise_value = 0.0;
+/* ============ 噪音采集 & 强度计算 ============ */
 
-
+/**
+ * 读取一段时间内的噪音强度（RMS + 对数压缩）
+ * 返回：相对噪音强度值（伪 dB）
+ */
 float readNoise() {
-  int adc = analogRead(MIC_PIN);   // 0 ~ 4095
-  return (float)adc;
+  long sum = 0;
+
+  // 1️⃣ 先估计直流偏置（麦克风中点）
+  for (int i = 0; i < SAMPLE_COUNT; i++) {
+    sum += analogRead(MIC_PIN);
+    delayMicroseconds(SAMPLE_DELAY_US);
+  }
+  float dc = sum / (float)SAMPLE_COUNT;
+
+  // 2️⃣ 计算 RMS
+  float sqSum = 0;
+  for (int i = 0; i < SAMPLE_COUNT; i++) {
+    float v = analogRead(MIC_PIN) - dc;
+    sqSum += v * v;
+    delayMicroseconds(SAMPLE_DELAY_US);
+  }
+
+  float rms = sqrt(sqSum / SAMPLE_COUNT);
+
+  // 3️⃣ 映射到对数刻度（相对分贝）
+  float intensity = 20.0 * log10(rms + 1.0);
+
+  return intensity;
 }
 
 /* ---------------- GET /noise ---------------- */
+
 void handleNoise() {
   float noise = readNoise();
 
@@ -43,9 +71,10 @@ void handleNoise() {
 
   server.send(200, "application/json", json);
 
-  // 更新最后请求的时间
   lastRequestTime = millis();
 }
+
+/* ---------------- 注册到服务器 ---------------- */
 
 void registerToServer() {
   if (WiFi.status() != WL_CONNECTED) return;
@@ -66,7 +95,7 @@ void registerToServer() {
   if (code > 0) {
     Serial.println("已向服务器注册");
     registered = true;
-    lastRequestTime = millis();   // ⭐ 关键：当作一次“已联系”
+    lastRequestTime = millis();
   } else {
     Serial.println("注册失败");
   }
@@ -75,47 +104,45 @@ void registerToServer() {
 }
 
 /* ---------------- 重新注册 ---------------- */
+
 void tryReRegister() {
-  // 判断是否超过10分钟没有接收到请求
   if (millis() - lastRequestTime > REQUEST_TIMEOUT) {
-    // 尝试重新注册
     if (millis() - lastRegisterTry > REGISTER_INTERVAL) {
       lastRegisterTry = millis();
-      // 重新注册的操作，比如通过HTTP请求发送注册信息
       Serial.println("尝试重新注册...");
       registerToServer();
     }
   }
 }
 
+/* ================== setup ================== */
+
 void setup() {
   Serial.begin(115200);
 
-  analogReadResolution(12);              // ESP32 默认 12 位
-  analogSetPinAttenuation(MIC_PIN, ADC_11db); // 量程到 ~3.3V
-  // 连接到Wi-Fi
+  analogReadResolution(12);
+  analogSetPinAttenuation(MIC_PIN, ADC_11db);
+
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
   }
-  Serial.println("WiFi连接成功!");
-  Serial.print("IP: ");
+
+  Serial.println("\nWiFi连接成功!");
   Serial.println(WiFi.localIP());
 
-  registerToServer();   // 一连上注册
+  registerToServer();
 
-  // 启动Web服务器
   server.on("/noise", HTTP_GET, handleNoise);
   server.begin();
 
-  // 初始化时间
   lastRequestTime = millis();
 }
 
+/* =================== loop =================== */
+
 void loop() {
   server.handleClient();
-
-  // 检查是否需要重新注册
   tryReRegister();
 }
