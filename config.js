@@ -1,12 +1,24 @@
 const CONFIG = {
-  scale: 2, // 1 unit = 1 px
-  pointRadius: 4, // pixels
-  influenceRadius: 50, // custom units
-  influenceOpacity: 0.5, // 0-1, transparency for influence raster
+  endpoint: `http://${location.hostname}:9880/api/points`,
+  statusEndpoint: `http://${location.hostname}:9880/api/status`,
+  pollIntervalMs: 2000,
+  scale: 2,
+  pointRadius: 6,
+  influenceRadius: 90,
+  influenceOpacity: 0.26,
   mapImage: 'map.png',
-  // Anchor (image pixel) that should coincide with the world origin (0, 0)
   mapAnchor: { x: 800, y: 780 },
-  mapScale: 0.5, // background map scaling factor (1 = original pixel size)
+  mapScale: 0.5,
+  outsideColor: '#d7dde7',
+  axisColor: 'rgba(140, 154, 179, 0.45)',
+  showLabels: true,
+  glowIntensity: 1,
+  gridEnabled: false,
+  legend: [
+    { label: '低噪音', color: [0, 200, 0], desc: '< 55' },
+    { label: '中噪音', color: [255, 200, 0], desc: '55 - 75' },
+    { label: '高噪音', color: [255, 0, 0], desc: '>= 75' },
+  ],
 };
 
 window.CONFIG = CONFIG;

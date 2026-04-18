@@ -3,12 +3,51 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>????????</title>
+  <title>CAS 噪音地图</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <canvas id="viz"></canvas>
-  <div id="status">????...</div>
+
+  <aside class="hud">
+    <div class="hud-card hud-header">
+      <div>
+        <div class="eyebrow">CAS Noise Monitor</div>
+        <h1>噪音地图</h1>
+      </div>
+      <div class="live-dot" id="liveDot"></div>
+    </div>
+
+    <div class="hud-card">
+      <div id="status" class="status-text">正在加载...</div>
+      <div id="subStatus" class="sub-status">等待后端数据...</div>
+    </div>
+
+    <div class="hud-card stats-grid" id="statsGrid">
+      <div class="stat-item">
+        <span class="stat-label">已注册</span>
+        <span class="stat-value" id="registeredCount">0</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">已渲染</span>
+        <span class="stat-value" id="renderedCount">0</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">在线</span>
+        <span class="stat-value" id="onlineCount">0</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">更新时间</span>
+        <span class="stat-value stat-time" id="updatedTime">--:--:--</span>
+      </div>
+    </div>
+
+    <div class="hud-card">
+      <div class="card-title">颜色说明</div>
+      <div id="legend" class="legend-list"></div>
+    </div>
+  </aside>
+
   <script src="config.js"></script>
   <script src="app.js"></script>
 </body>

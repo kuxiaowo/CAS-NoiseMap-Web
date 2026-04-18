@@ -1,6 +1,6 @@
 import http.server
-import socketserver
 import socket
+import socketserver
 import sys
 from pathlib import Path
 
@@ -8,7 +8,7 @@ PORT = 8080
 BIND_HOST = "0.0.0.0"
 
 
-def get_local_ip():
+def get_local_ip() -> str:
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
@@ -19,10 +19,9 @@ def get_local_ip():
         return "127.0.0.1"
 
 
-def main():
+def main() -> None:
     web_root = Path(__file__).parent.resolve()
-    os_path = str(web_root)
-    print(f"Serving directory: {os_path}")
+    print(f"Serving directory: {web_root}")
 
     handler = http.server.SimpleHTTPRequestHandler
     socketserver.TCPServer.allow_reuse_address = True

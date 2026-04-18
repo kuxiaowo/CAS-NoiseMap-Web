@@ -3,6 +3,7 @@ import random
 import socket
 import threading
 import time
+from dataclasses import dataclass
 
 from fastapi import FastAPI
 import requests
@@ -11,16 +12,20 @@ import uvicorn
 DEFAULT_BACKEND = "http://127.0.0.1:9880"
 REGISTER_PATH = "/api/register"
 NOISE_PATH = "/noise"
-DEFAULT_PORT = 8000
-
+DEFAULT_BASE_PORT = 8000
+DEFAULT_SENSOR_COUNT = 10
 NOISE_MIN = 20.0
 NOISE_MAX = 100.0
 NOISE_STEP = 10.0
 
-app = FastAPI()
-NOISE_LOCK = threading.Lock()
-CURRENT_NOISE = 0.0
-SENSOR_ID = 1
+
+@dataclass
+class SensorRuntime:
+    sensor_id: int
+    port: int
+    current_noise: float
+    lock: threading.Lock
+    app: FastAPI
 
 
 def clamp(value: float, minimum: float, maximum: float) -> float:
@@ -29,86 +34,90 @@ def clamp(value: float, minimum: float, maximum: float) -> float:
 
 def get_local_ip() -> str:
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))
-        ip = s.getsockname()[0]
-        s.close()
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.connect(("8.8.8.8", 80))
+        ip = sock.getsockname()[0]
+        sock.close()
         return ip
     except Exception:
         return "127.0.0.1"
 
 
-def noise_loop(interval: float) -> None:
-    global CURRENT_NOISE
+def create_sensor_app(runtime: SensorRuntime) -> None:
+    @runtime.app.get(NOISE_PATH)
+    def get_noise() -> dict:
+        with runtime.lock:
+            noise = runtime.current_noise
+        return {"id": runtime.sensor_id, "noise": noise}
+
+
+def noise_loop(runtime: SensorRuntime, interval: float) -> None:
     noise = random.uniform(NOISE_MIN, NOISE_MAX)
     while True:
         delta = random.uniform(-NOISE_STEP, NOISE_STEP)
         noise = clamp(noise + delta, NOISE_MIN, NOISE_MAX)
-        with NOISE_LOCK:
-            CURRENT_NOISE = round(noise, 2)
+        with runtime.lock:
+            runtime.current_noise = round(noise, 2)
         time.sleep(interval)
 
 
-@app.get(NOISE_PATH)
-def get_noise() -> dict:
-    with NOISE_LOCK:
-        noise = CURRENT_NOISE
-    return {"id": SENSOR_ID, "noise": noise}
-
-
-def register_sensor(backend: str, sensor_id: int, ip: str) -> None:
+def register_sensor(backend: str, sensor_id: int, ip: str, port: int) -> None:
     url = f"{backend}{REGISTER_PATH}"
-    payload = {"id": sensor_id, "ip": ip}
-    try:
-        response = requests.post(url, json=payload, timeout=3)
-        response.raise_for_status()
-    except requests.RequestException as exc:
-        raise SystemExit(f"register failed: {exc}")
+    payload = {"id": sensor_id, "ip": ip, "port": port}
+    response = requests.post(url, json=payload, timeout=3)
+    response.raise_for_status()
+
+
+def run_sensor_server(runtime: SensorRuntime) -> None:
+    config = uvicorn.Config(runtime.app, host="0.0.0.0", port=runtime.port, log_level="warning")
+    server = uvicorn.Server(config)
+    server.run()
+
+
+def start_sensor(runtime: SensorRuntime, backend: str, ip: str, interval: float) -> None:
+    create_sensor_app(runtime)
+    register_sensor(backend, runtime.sensor_id, ip, runtime.port)
+
+    noise_worker = threading.Thread(target=noise_loop, args=(runtime, interval), daemon=True)
+    noise_worker.start()
+
+    server_worker = threading.Thread(target=run_sensor_server, args=(runtime,), daemon=True)
+    server_worker.start()
+
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Noise sensor simulator")
-    parser.add_argument("--id", type=int, default=1, help="Sensor id")
-    parser.add_argument(
-        "--ip",
-        type=str,
-        default="",
-        help="IP to register (default: auto-detect)",
-    )
-    parser.add_argument(
-        "--backend",
-        type=str,
-        default=DEFAULT_BACKEND,
-        help="Backend base URL",
-    )
-    parser.add_argument(
-        "--interval",
-        type=float,
-        default=1.0,
-        help="Noise update interval (seconds)",
-    )
-    parser.add_argument(
-        "--port",
-        type=int,
-        default=DEFAULT_PORT,
-        help="HTTP port to serve /noise (backend expects 8000)",
-    )
+    parser.add_argument("--backend", type=str, default=DEFAULT_BACKEND, help="Backend base URL")
+    parser.add_argument("--ip", type=str, default="", help="IP to register")
+    parser.add_argument("--interval", type=float, default=1.0, help="Noise update interval")
+    parser.add_argument("--count", type=int, default=DEFAULT_SENSOR_COUNT, help="How many simulated sensors to start")
+    parser.add_argument("--start-id", type=int, default=1, help="First sensor id")
+    parser.add_argument("--base-port", type=int, default=DEFAULT_BASE_PORT, help="First sensor port")
     return parser.parse_args()
 
 
 def main() -> None:
-    global SENSOR_ID
     args = parse_args()
-    SENSOR_ID = args.id
     ip = args.ip.strip() or get_local_ip()
-    register_sensor(args.backend, SENSOR_ID, ip)
 
-    t = threading.Thread(target=noise_loop, args=(args.interval,), daemon=True)
-    t.start()
+    runtimes: list[SensorRuntime] = []
+    for offset in range(args.count):
+        sensor_id = args.start_id + offset
+        port = args.base_port + offset
+        runtime = SensorRuntime(
+            sensor_id=sensor_id,
+            port=port,
+            current_noise=round(random.uniform(NOISE_MIN, NOISE_MAX), 2),
+            lock=threading.Lock(),
+            app=FastAPI(),
+        )
+        start_sensor(runtime, args.backend, ip, args.interval)
+        runtimes.append(runtime)
+        print(f"started simulated sensor id={sensor_id} port={port} ip={ip}")
 
-    config = uvicorn.Config(app, host="0.0.0.0", port=args.port, log_level="info")
-    server = uvicorn.Server(config)
-    server.run()
+    while True:
+        time.sleep(10)
 
 
 if __name__ == "__main__":

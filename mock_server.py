@@ -1,87 +1,137 @@
-import math
+import json
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
+import requests
+import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-import requests
-import uvicorn
 
-MAX_ID = 100
-GREEN_MAX = 55
-YELLOW_MAX = 75
-
-GREEN_RGB = [0, 200, 0]
-YELLOW_RGB = [255, 200, 0]
-RED_RGB = [255, 0, 0]
-
-COORD_RADIUS = 220
-
-NOISE_VALUES = [None] * (MAX_ID + 1)
-SENSOR_IPS = [None] * (MAX_ID + 1)
-X_COORDS = [0] * (MAX_ID + 1)
-Y_COORDS = [0] * (MAX_ID + 1)
-LOCK = threading.Lock()
-
-TOTAL_POINTS = MAX_ID + 1
-for idx in range(TOTAL_POINTS):
-    angle = 2 * math.pi * idx / TOTAL_POINTS
-    X_COORDS[idx] = int(round(COORD_RADIUS * math.cos(angle)))
-    Y_COORDS[idx] = int(round(COORD_RADIUS * math.sin(angle)))
-
-
-def noise_to_rgb(noise: float) -> list[int]:
-    if noise < GREEN_MAX:
-        return GREEN_RGB
-    if noise < YELLOW_MAX:
-        return YELLOW_RGB
-    return RED_RGB
-
-
-def collect_points() -> list[dict]:
-    points = []
-    for idx in range(TOTAL_POINTS):
-        noise = NOISE_VALUES[idx]
-        if noise is None:
-            continue
-        points.append(
-            {
-                "id": idx,
-                "x": X_COORDS[idx],
-                "y": Y_COORDS[idx],
-                "rgb": noise_to_rgb(noise),
-            }
-        )
-    return points
-
-
+BASE_DIR = Path(__file__).parent.resolve()
+POSITIONS_PATH = BASE_DIR / "sensor_positions.json"
 API_PREFIX = "/api"
+POLL_INTERVAL_SECONDS = 2.0
+MAX_SENSOR_ID = 100
+REQUEST_TIMEOUT_SECONDS = 3
 
-app = FastAPI()
+COLOR_RULES = [
+    {"max": 55.0, "rgb": [0, 200, 0], "name": "green"},
+    {"max": 75.0, "rgb": [255, 200, 0], "name": "yellow"},
+    {"max": float("inf"), "rgb": [255, 0, 0], "name": "red"},
+]
+
+
+@dataclass
+class SensorPosition:
+    x: float
+    y: float
+    label: str | None = None
+
+
+@dataclass
+class SensorState:
+    sensor_id: int
+    ip: str
+    port: int = 8000
+    last_noise: float | None = None
+    last_seen: float | None = None
+    online: bool = False
+
+
+state_lock = threading.Lock()
+sensor_positions: dict[int, SensorPosition] = {}
+sensor_states: dict[int, SensorState] = {}
+
+app = FastAPI(title="CAS Noise Map Backend")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["POST"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 
-def format_status() -> str:
-    with LOCK:
-        registrations = [
-            (idx, ip)
-            for idx, ip in enumerate(SENSOR_IPS)
-            if ip
-        ]
-        readings = [
-            (idx, NOISE_VALUES[idx])
-            for idx, _ in registrations
-            if NOISE_VALUES[idx] is not None
-        ]
-    reg_text = ", ".join([f"{idx}:{ip}" for idx, ip in registrations]) or "none"
-    noise_text = ", ".join([f"{idx}:{noise}" for idx, noise in readings]) or "none"
-    return f"registered=[{reg_text}] noise=[{noise_text}]"
+
+def load_positions() -> dict[int, SensorPosition]:
+    if not POSITIONS_PATH.exists():
+        return {}
+
+    raw = json.loads(POSITIONS_PATH.read_text(encoding="utf-8"))
+    positions: dict[int, SensorPosition] = {}
+    for key, value in raw.items():
+        try:
+            sensor_id = int(key)
+            positions[sensor_id] = SensorPosition(
+                x=float(value["x"]),
+                y=float(value["y"]),
+                label=str(value.get("label", "")).strip() or None,
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+    return positions
+
+
+def noise_to_color(noise: float) -> dict[str, Any]:
+    for rule in COLOR_RULES:
+        if noise < rule["max"]:
+            return {"rgb": rule["rgb"], "level": rule["name"]}
+    return {"rgb": [120, 120, 120], "level": "unknown"}
+
+
+def build_point(sensor_id: int, state: SensorState) -> dict[str, Any] | None:
+    position = sensor_positions.get(sensor_id)
+    if not position or state.last_noise is None:
+        return None
+
+    color = noise_to_color(state.last_noise)
+    return {
+        "id": sensor_id,
+        "label": position.label or f"Sensor {sensor_id}",
+        "x": position.x,
+        "y": position.y,
+        "noise": round(state.last_noise, 2),
+        "rgb": color["rgb"],
+        "level": color["level"],
+        "online": state.online,
+        "last_seen": state.last_seen,
+    }
+
+
+def collect_points() -> list[dict[str, Any]]:
+    with state_lock:
+        points = []
+        for sensor_id in sorted(sensor_states.keys()):
+            point = build_point(sensor_id, sensor_states[sensor_id])
+            if point is not None:
+                points.append(point)
+        return points
+
+
+def collect_status() -> dict[str, Any]:
+    with state_lock:
+        registered = []
+        for sensor_id in sorted(sensor_states.keys()):
+            state = sensor_states[sensor_id]
+            registered.append(
+                {
+                    "id": sensor_id,
+                    "ip": state.ip,
+                    "port": state.port,
+                    "online": state.online,
+                    "last_noise": state.last_noise,
+                    "last_seen": state.last_seen,
+                    "has_position": sensor_id in sensor_positions,
+                }
+            )
+        return {
+            "registered_count": len(sensor_states),
+            "positioned_count": sum(1 for sensor_id in sensor_states if sensor_id in sensor_positions),
+            "sensors": registered,
+        }
 
 
 @app.post(f"{API_PREFIX}/register")
@@ -90,39 +140,49 @@ async def register_sensor(request: Request):
         payload = await request.json()
     except Exception:
         return JSONResponse(status_code=400, content={"error": "invalid json"})
+
     if not isinstance(payload, dict):
         return JSONResponse(status_code=400, content={"error": "invalid payload"})
-    if "id" not in payload or "ip" not in payload:
-        return JSONResponse(status_code=400, content={"error": "missing id or ip"})
+
     try:
-        idx = int(payload["id"])
-        ip = str(payload["ip"]).strip()
+        sensor_id = int(payload.get("id"))
+        ip = str(payload.get("ip", "")).strip()
+        port = int(payload.get("port", 8000))
     except (TypeError, ValueError):
-        return JSONResponse(status_code=400, content={"error": "invalid id or ip type"})
-    if idx < 0 or idx > MAX_ID:
+        return JSONResponse(status_code=400, content={"error": "invalid id, ip, or port"})
+
+    if sensor_id < 0 or sensor_id > MAX_SENSOR_ID:
         return JSONResponse(status_code=400, content={"error": "id out of range"})
-    with LOCK:
-        SENSOR_IPS[idx] = ip
-    print(f"[register] {SENSOR_IPS}")
-    return {"status": "ok"}
+    if not ip:
+        return JSONResponse(status_code=400, content={"error": "missing ip"})
+    if port <= 0 or port > 65535:
+        return JSONResponse(status_code=400, content={"error": "invalid port"})
+
+    with state_lock:
+        existing = sensor_states.get(sensor_id)
+        if existing is None:
+            sensor_states[sensor_id] = SensorState(sensor_id=sensor_id, ip=ip, port=port)
+        else:
+            existing.ip = ip
+            existing.port = port
+
+    return {"status": "ok", "id": sensor_id, "ip": ip, "port": port}
 
 
+@app.get(f"{API_PREFIX}/points")
 @app.post(f"{API_PREFIX}/points")
-async def post_points():
-    with LOCK:
-        points = collect_points()
-    return points
+async def api_points():
+    return collect_points()
 
 
-def run_server(app: FastAPI, host: str, port: int) -> None:
-    config = uvicorn.Config(app, host=host, port=port, log_level="info")
-    server = uvicorn.Server(config)
-    server.run()
+@app.get(f"{API_PREFIX}/status")
+async def api_status():
+    return collect_status()
 
 
-def fetch_noise(ip: str) -> tuple[int | None, float | None]:
+def fetch_sensor_noise(ip: str, port: int) -> tuple[int | None, float | None]:
     try:
-        response = requests.get(f"http://{ip}:8000/noise", timeout=3)
+        response = requests.get(f"http://{ip}:{port}/noise", timeout=REQUEST_TIMEOUT_SECONDS)
         response.raise_for_status()
         payload = response.json()
     except Exception:
@@ -130,42 +190,56 @@ def fetch_noise(ip: str) -> tuple[int | None, float | None]:
 
     if not isinstance(payload, dict):
         return None, None
+
     try:
-        idx = int(payload.get("id"))
+        sensor_id = int(payload.get("id"))
         noise = float(payload.get("noise"))
     except (TypeError, ValueError):
         return None, None
-    if idx < 0 or idx > MAX_ID:
-        return None, None
-    return idx, noise
+
+    return sensor_id, noise
 
 
-def poll_sensors() -> None:
+def poll_loop() -> None:
     while True:
-        start = time.monotonic()
-        with LOCK:
-            targets = [(idx, ip) for idx, ip in enumerate(SENSOR_IPS) if ip]
+        started_at = time.monotonic()
+        with state_lock:
+            targets = [(sensor_id, state.ip, state.port) for sensor_id, state in sensor_states.items() if state.ip]
 
         if targets:
-            max_workers = min(20, len(targets))
-            with ThreadPoolExecutor(max_workers=max_workers) as executor:
-                futures = [executor.submit(fetch_noise, ip) for _, ip in targets]
-                for future in futures:
-                    idx, noise = future.result()
-                    if idx is None:
-                        continue
-                    with LOCK:
-                        NOISE_VALUES[idx] = noise
-            print(f"[poll] {format_status()}")
+            with ThreadPoolExecutor(max_workers=min(20, len(targets))) as executor:
+                futures = {
+                    executor.submit(fetch_sensor_noise, ip, port): known_id
+                    for known_id, ip, port in targets
+                }
+                for future, known_id in futures.items():
+                    fetched_id, noise = future.result()
+                    now = time.time()
+                    with state_lock:
+                        state = sensor_states.get(known_id)
+                        if state is None:
+                            continue
+                        if fetched_id is None or noise is None:
+                            state.online = False
+                            continue
+                        state.last_noise = noise
+                        state.last_seen = now
+                        state.online = True
 
-        elapsed = time.monotonic() - start
-        time.sleep(max(0, 2 - elapsed))
+        elapsed = time.monotonic() - started_at
+        time.sleep(max(0.0, POLL_INTERVAL_SECONDS - elapsed))
 
 
 def main() -> None:
-    poller = threading.Thread(target=poll_sensors, daemon=True)
+    global sensor_positions
+    sensor_positions = load_positions()
+
+    poller = threading.Thread(target=poll_loop, daemon=True)
     poller.start()
-    run_server(app, "0.0.0.0", 9880)
+
+    config = uvicorn.Config(app, host="0.0.0.0", port=9880, log_level="info")
+    server = uvicorn.Server(config)
+    server.run()
 
 
 if __name__ == "__main__":
