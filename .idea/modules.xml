@@ -2,7 +2,11 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
+<<<<<<< Updated upstream
       <module fileurl="file://$PROJECT_DIR$/.idea/CAS-NoiseMap-Web-rewrite.iml" filepath="$PROJECT_DIR$/.idea/CAS-NoiseMap-Web-rewrite.iml" />
+=======
+      <module fileurl="file://$PROJECT_DIR$/.idea/CAS-NoiseMap-Web.iml" filepath="$PROJECT_DIR$/.idea/CAS-NoiseMap-Web.iml" />
+>>>>>>> Stashed changes
     </modules>
   </component>
 </project>
