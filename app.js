@@ -8,9 +8,36 @@ const registeredCountEl = document.getElementById('registeredCount');
 const renderedCountEl = document.getElementById('renderedCount');
 const onlineCountEl = document.getElementById('onlineCount');
 const updatedTimeEl = document.getElementById('updatedTime');
+const sensorListEl = document.getElementById('sensorList');
+const sensorCardHeaderEl = document.getElementById('sensorCardHeader');
+const sensorCountEl = document.getElementById('sensorCount');
+let sensorExpanded = false;
+
+if (sensorCardHeaderEl) {
+  const toggle = () => {
+    sensorExpanded = !sensorExpanded;
+    if (sensorExpanded) {
+      sensorListEl.classList.add('expanded');
+      sensorListEl.classList.remove('collapsed');
+      sensorListEl.setAttribute('aria-hidden', 'false');
+    } else {
+      sensorListEl.classList.remove('expanded');
+      sensorListEl.classList.add('collapsed');
+      sensorListEl.setAttribute('aria-hidden', 'true');
+    }
+  };
+  sensorCardHeaderEl.addEventListener('click', toggle);
+  sensorCardHeaderEl.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') {
+      ev.preventDefault();
+      toggle();
+    }
+  });
+}
 
 const ENDPOINT = window.CONFIG?.endpoint;
 const STATUS_ENDPOINT = window.CONFIG?.statusEndpoint;
+const DEVICES_ENDPOINT = window.CONFIG?.devicesEndpoint;
 const POLL_INTERVAL_MS = Number(window.CONFIG?.pollIntervalMs ?? 2000);
 const INFLUENCE_RADIUS = Number(window.CONFIG?.influenceRadius ?? 90);
 const POINT_RADIUS = Number(window.CONFIG?.pointRadius ?? 6);
@@ -305,20 +332,86 @@ function renderLegend() {
   }
 }
 
+function renderSensorList(sensors) {
+  if (!sensorListEl) return;
+  // always update count
+  if (sensorCountEl) sensorCountEl.textContent = String(Array.isArray(sensors) ? sensors.length : 0);
+
+  // only populate full list when expanded
+  if (!sensorExpanded) {
+    sensorListEl.innerHTML = '';
+    return;
+  }
+
+  sensorListEl.innerHTML = '';
+  if (!Array.isArray(sensors) || sensors.length === 0) {
+    sensorListEl.textContent = '当前无已注册设备';
+    return;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'sensor-list-rows';
+
+  for (const s of sensors) {
+    const row = document.createElement('div');
+    row.className = 'sensor-row';
+
+    const left = document.createElement('div');
+    left.className = 'sensor-left';
+    left.innerHTML = `<div><strong>传感器 ${String(s.id)}</strong> ${s.has_position ? '' : '<span style="color:#f59e0b">(无坐标)</span>'}</div>`;
+
+    const ip = document.createElement('div');
+    ip.className = 'sensor-ip';
+    ip.textContent = s.ip ? `${s.ip}:${s.port}` : '-';
+    left.appendChild(ip);
+
+    const right = document.createElement('div');
+    right.className = 'sensor-right';
+    const onlineDot = document.createElement('span');
+    onlineDot.style.display = 'inline-block';
+    onlineDot.style.width = '10px';
+    onlineDot.style.height = '10px';
+    onlineDot.style.borderRadius = '50%';
+    onlineDot.style.marginRight = '8px';
+    onlineDot.style.background = s.online ? '#4ade80' : '#ef4444';
+
+    const noiseText = document.createElement('span');
+    noiseText.textContent = s.last_noise != null ? `噪音 ${Number(s.last_noise).toFixed(1)}` : '';
+
+    const lastSeen = document.createElement('div');
+    lastSeen.className = 'sensor-lastseen';
+    lastSeen.style.fontSize = '11px';
+    lastSeen.style.color = 'rgba(220,220,220,0.7)';
+    lastSeen.textContent = s.last_seen ? new Date(s.last_seen * 1000).toLocaleString() : '';
+
+    right.appendChild(onlineDot);
+    right.appendChild(noiseText);
+    right.appendChild(lastSeen);
+
+    row.appendChild(left);
+    row.appendChild(right);
+    list.appendChild(row);
+  }
+
+  sensorListEl.appendChild(list);
+}
+
 async function refresh() {
   try {
-    const [pointsJson, statusJson] = await Promise.all([
+    const [pointsJson, devicesJson] = await Promise.all([
       fetchJson(ENDPOINT),
-      fetchJson(STATUS_ENDPOINT),
+      fetchJson(DEVICES_ENDPOINT ?? STATUS_ENDPOINT),
     ]);
 
     lastPoints = normalizePoints(pointsJson);
     lastUpdated = new Date();
     render(lastPoints);
 
-    const sensors = Array.isArray(statusJson.sensors) ? statusJson.sensors : [];
-    const registeredCount = Number(statusJson.registered_count ?? sensors.length ?? 0);
+    const sensors = Array.isArray(devicesJson.sensors) ? devicesJson.sensors : [];
+    const registeredCount = Number(devicesJson.count ?? devicesJson.registered_count ?? sensors.length ?? 0);
     const onlineCount = sensors.filter((sensor) => sensor.online).length;
+
+    renderSensorList(sensors);
 
     registeredCountEl.textContent = String(registeredCount);
     renderedCountEl.textContent = String(lastPoints.length);

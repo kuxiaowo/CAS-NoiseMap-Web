@@ -1,0 +1,21 @@
+{
+  "default": {
+    "reference_raw_rms": 120.0,
+    "reference_db": 60.0,
+    "noise_floor_raw_rms": 8.0,
+    "min_db": 35.0,
+    "max_db": 110.0
+  },
+  "thresholds": [
+    { "max": 55.0, "rgb": [0, 200, 0], "name": "green" },
+    { "max": 75.0, "rgb": [255, 200, 0], "name": "yellow" },
+    { "max": 1000000.0, "rgb": [255, 0, 0], "name": "red" }
+  ],
+  "sensors": {
+    "1": { "reference_raw_rms": 120.0, "reference_db": 60.0, "noise_floor_raw_rms": 8.0, "min_db": 35.0, "max_db": 110.0 },
+    "2": { "reference_raw_rms": 126.0, "reference_db": 60.0, "noise_floor_raw_rms": 9.0, "min_db": 35.0, "max_db": 110.0 },
+    "3": { "reference_raw_rms": 118.0, "reference_db": 60.0, "noise_floor_raw_rms": 7.0, "min_db": 35.0, "max_db": 110.0 },
+    "4": { "reference_raw_rms": 132.0, "reference_db": 60.0, "noise_floor_raw_rms": 10.0, "min_db": 35.0, "max_db": 110.0 },
+    "5": { "reference_raw_rms": 124.0, "reference_db": 60.0, "noise_floor_raw_rms": 8.5, "min_db": 35.0, "max_db": 110.0 }
+  }
+}
