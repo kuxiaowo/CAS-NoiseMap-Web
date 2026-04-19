@@ -17,7 +17,7 @@ BASE_DIR = Path(__file__).parent.resolve()
 POSITIONS_PATH = BASE_DIR / "sensor_positions.json"
 CALIBRATION_PATH = BASE_DIR / "sensor_calibration.json"
 API_PREFIX = "/api"
-POLL_INTERVAL_SECONDS = 2.0
+POLL_INTERVAL_SECONDS = 0.5
 MAX_SENSOR_ID = 100
 REQUEST_TIMEOUT_SECONDS = 3
 
@@ -255,7 +255,17 @@ async def register_sensor(request: Request):
     if port <= 0 or port > 65535:
         return JSONResponse(status_code=400, content={"error": "invalid port"})
 
+    replaced_sensor_id = None
     with state_lock:
+        duplicate_ids = [
+            known_id
+            for known_id, state in sensor_states.items()
+            if state.ip == ip and known_id != sensor_id
+        ]
+        for duplicate_id in duplicate_ids:
+            sensor_states.pop(duplicate_id, None)
+            replaced_sensor_id = duplicate_id
+
         existing = sensor_states.get(sensor_id)
         if existing is None:
             sensor_states[sensor_id] = SensorState(sensor_id=sensor_id, ip=ip, port=port)
@@ -263,7 +273,10 @@ async def register_sensor(request: Request):
             existing.ip = ip
             existing.port = port
 
-    return {"status": "ok", "id": sensor_id, "ip": ip, "port": port}
+    response = {"status": "ok", "id": sensor_id, "ip": ip, "port": port}
+    if replaced_sensor_id is not None:
+        response["replaced_id"] = replaced_sensor_id
+    return response
 
 
 @app.get(f"{API_PREFIX}/points")

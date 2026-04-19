@@ -7,9 +7,9 @@
 /* ================= 配置区 ================= */
 
 #define WIFI_SSID     "酷小我的Pura 70 Pro"
-#define WIFI_PASS     "11112222"
+#define WIFI_PASS     "11110000"
 
-#define DEVICE_ID     1
+#define DEVICE_ID     2
 
 #define SERVER_IP     "192.168.43.252"
 #define SERVER_PORT   9880
@@ -20,9 +20,9 @@
 #define CONFIG_SIGNATURE WIFI_SSID "|" WIFI_PASS "|" SERVER_IP "|" STR(SERVER_PORT) "|" STR(DEVICE_ID)
 
 /* INMP441 数字麦克风引脚配置 */
-#define I2S_WS  25    // Word Select (LRCLK)
-#define I2S_SD  33    // Serial Data (DOUT)
-#define I2S_SCK 32    // Serial Clock (BCLK)
+#define I2S_WS  4    // Word Select (LRCLK)
+#define I2S_SD  2    // Serial Data (DOUT)
+#define I2S_SCK 3   // Serial Clock (BCLK)
 
 #define SAMPLE_COUNT 200  // 每次读取的采样点数
 #define SAMPLE_RATE 16000 // 采样率（Hz）
@@ -212,6 +212,8 @@ small{color:#b7c2e1}
   server.send(200, "text/html; charset=utf-8", html);
 }
 
+/* ============ I2S 初始化 ============ */
+
 void initI2S() {
   i2s_config_t i2s_config = {
     .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_RX),
@@ -287,29 +289,26 @@ void handleNoise() {
 
 void connectWiFiUntilSuccess() {
   WiFi.mode(WIFI_STA);
+  WiFi.begin(wifiSsid.c_str(), wifiPass.c_str());
 
-  while (WiFi.status() != WL_CONNECTED) {
-    Serial.printf("正在连接 WiFi: %s\n", wifiSsid.c_str());
-    WiFi.begin(wifiSsid.c_str(), wifiPass.c_str());
+  Serial.printf("正在连接 WiFi: %s\n", wifiSsid.c_str());
 
-    int dots = 0;
-    while (WiFi.status() != WL_CONNECTED && dots < 20) {
-      delay(500);
-      Serial.print(".");
-      dots++;
-    }
-
-    if (WiFi.status() == WL_CONNECTED) {
-      break;
-    }
-
-    Serial.println("\n本轮 WiFi 连接失败，3 秒后重试...");
-    WiFi.disconnect(true, true);
-    delay(3000);
+  int dots = 0;
+  while (WiFi.status() != WL_CONNECTED && dots < 40) {
+    delay(500);
+    Serial.print(".");
+    dots++;
   }
 
-  Serial.println("\nWiFi 连接成功!");
-  Serial.println(WiFi.localIP());
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi 连接成功!");
+    Serial.println(WiFi.localIP());
+    return;
+  }
+
+  Serial.printf("\nWiFi 连接失败, status=%d, 即将重启...\n", WiFi.status());
+  delay(1000);
+  ESP.restart();
 }
 
 void registerToServer() {

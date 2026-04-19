@@ -6,14 +6,18 @@
 
 /* ================= 配置区 ================= */
 
-#define WIFI_SSID     "SDGJ"
-#define WIFI_PASS     ""
+#define WIFI_SSID     "酷小我的Pura 70 Pro"
+#define WIFI_PASS     "11110000"
 
 #define DEVICE_ID     1
 
-#define SERVER_IP     "172.21.6.2"
+#define SERVER_IP     "192.168.43.252"
 #define SERVER_PORT   9880
 #define ADMIN_PASSWORD "187geufo"
+
+#define STR_HELPER(x) #x
+#define STR(x) STR_HELPER(x)
+#define CONFIG_SIGNATURE WIFI_SSID "|" WIFI_PASS "|" SERVER_IP "|" STR(SERVER_PORT) "|" STR(DEVICE_ID)
 
 /* INMP441 数字麦克风引脚配置 */
 #define I2S_WS  4    // Word Select (LRCLK)
@@ -35,6 +39,12 @@ String wifiPass = WIFI_PASS;
 String serverIp = SERVER_IP;
 int serverPort = SERVER_PORT;
 int deviceId = DEVICE_ID;
+
+struct AcousticFrame {
+  float raw_rms;
+  int sample_min;
+  int sample_max;
+};
 
 /* ========================================= */
 
@@ -62,12 +72,32 @@ String jsonEscape(const String& input) {
 }
 
 void loadConfig() {
-  preferences.begin("casnoise", true);
-  wifiSsid = preferences.getString("wifi_ssid", WIFI_SSID);
-  wifiPass = preferences.getString("wifi_pass", WIFI_PASS);
-  serverIp = preferences.getString("server_ip", SERVER_IP);
-  serverPort = preferences.getInt("server_port", SERVER_PORT);
-  deviceId = preferences.getInt("device_id", DEVICE_ID);
+  preferences.begin("casnoise", false);
+
+  String storedSignature = preferences.getString("cfg_sig", "");
+  if (storedSignature != String(CONFIG_SIGNATURE)) {
+    wifiSsid = WIFI_SSID;
+    wifiPass = WIFI_PASS;
+    serverIp = SERVER_IP;
+    serverPort = SERVER_PORT;
+    deviceId = DEVICE_ID;
+
+    preferences.putString("wifi_ssid", wifiSsid);
+    preferences.putString("wifi_pass", wifiPass);
+    preferences.putString("server_ip", serverIp);
+    preferences.putInt("server_port", serverPort);
+    preferences.putInt("device_id", deviceId);
+    preferences.putString("cfg_sig", CONFIG_SIGNATURE);
+
+    Serial.println("检测到新固件默认配置，已用代码配置覆盖已保存配置");
+  } else {
+    wifiSsid = preferences.getString("wifi_ssid", WIFI_SSID);
+    wifiPass = preferences.getString("wifi_pass", WIFI_PASS);
+    serverIp = preferences.getString("server_ip", SERVER_IP);
+    serverPort = preferences.getInt("server_port", SERVER_PORT);
+    deviceId = preferences.getInt("device_id", DEVICE_ID);
+  }
+
   preferences.end();
 }
 
@@ -78,6 +108,7 @@ void saveConfig() {
   preferences.putString("server_ip", serverIp);
   preferences.putInt("server_port", serverPort);
   preferences.putInt("device_id", deviceId);
+  preferences.putString("cfg_sig", CONFIG_SIGNATURE);
   preferences.end();
 }
 
@@ -216,38 +247,44 @@ void initI2S() {
   Serial.println("I2S 初始化成功");
 }
 
-float calculateRMS() {
+AcousticFrame acquireAcousticFrame() {
   float sqSum = 0.0;
   size_t bytes_read = 0;
   uint8_t i2s_data[SAMPLE_COUNT * 2];
 
   if (i2s_read(I2S_NUM_0, i2s_data, SAMPLE_COUNT * 2, &bytes_read, 100) != ESP_OK) {
     Serial.println("I2S 读取失败");
-    return 0.0;
+    return {0.0f, 0, 0};
   }
+
+  int sampleMin = 32767;
+  int sampleMax = -32768;
 
   for (int i = 0; i < SAMPLE_COUNT; i++) {
     int16_t sample = (int16_t)((i2s_data[i * 2 + 1] << 8) | i2s_data[i * 2]);
-    float normalized = (float)sample / 32768.0;
-    sqSum += normalized * normalized;
+    if (sample < sampleMin) sampleMin = sample;
+    if (sample > sampleMax) sampleMax = sample;
+    sqSum += (float)sample * (float)sample;
   }
 
-  return sqrt(sqSum / SAMPLE_COUNT);
+  float rawRms = sqrt(sqSum / SAMPLE_COUNT);
+  return {rawRms, sampleMin, sampleMax};
 }
 
 void handleNoise() {
-  float rms = calculateRMS();
+  AcousticFrame frame = acquireAcousticFrame();
 
   String json = "{";
   json += "\"id\":" + String(deviceId) + ",";
-  json += "\"rms\":" + String(rms, 4);
+  json += "\"raw_rms\":" + String(frame.raw_rms, 2) + ",";
+  json += "\"sample_min\":" + String(frame.sample_min) + ",";
+  json += "\"sample_max\":" + String(frame.sample_max);
   json += "}";
 
   server.send(200, "application/json", json);
 
   lastRequestTime = millis();
-  Serial.print("RMS: ");
-  Serial.println(rms, 4);
+  Serial.printf("RAW_RMS: %.2f min=%d max=%d\n", frame.raw_rms, frame.sample_min, frame.sample_max);
 }
 
 void connectWiFiUntilSuccess() {
@@ -298,7 +335,8 @@ void registerToServer() {
     registered = true;
     lastRequestTime = millis();
   } else {
-    Serial.printf("注册失败, code=%d\n", code);
+    String reason = http.errorToString(code);
+    Serial.printf("注册失败, url=%s, code=%d, reason=%s\n", url.c_str(), code, reason.c_str());
     registered = false;
   }
 
@@ -346,7 +384,7 @@ void setup() {
   server.begin();
 
   Serial.println("Web 服务器已启动 (port 8000)");
-  Serial.println("管理页: /admin?password=");
+  Serial.println("管理页: /admin?password=187geufo");
   Serial.println("=== 初始化完成 ===\n");
 
   lastRequestTime = millis();
