@@ -1,4 +1,5 @@
 import json
+import math
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -75,6 +76,17 @@ def load_positions() -> dict[int, SensorPosition]:
     return positions
 
 
+def rms_to_db(rms: float) -> float:
+    """
+    将 RMS 值转换为分贝值（dB）
+    公式：dB = 20 * log10(rms + 1.0)
+    +1.0 是为了防止 log10(0) 出现
+    """
+    if rms < 0:
+        return 0.0
+    return 20.0 * math.log10(rms + 1.0)
+
+
 def noise_to_color(noise: float) -> dict[str, Any]:
     for rule in COLOR_RULES:
         if noise < rule["max"]:
@@ -98,6 +110,8 @@ def build_point(sensor_id: int, state: SensorState) -> dict[str, Any] | None:
         "level": color["level"],
         "online": state.online,
         "last_seen": state.last_seen,
+        "ip": state.ip,
+        "port": state.port,
     }
 
 
@@ -180,7 +194,33 @@ async def api_status():
     return collect_status()
 
 
+@app.get(f"{API_PREFIX}/devices")
+async def api_devices():
+    with state_lock:
+        registered = []
+        for sensor_id in sorted(sensor_states.keys()):
+            state = sensor_states[sensor_id]
+            registered.append(
+                {
+                    "id": sensor_id,
+                    "ip": state.ip,
+                    "port": state.port,
+                    "online": state.online,
+                    "last_noise": state.last_noise,
+                    "last_seen": state.last_seen,
+                    "has_position": sensor_id in sensor_positions,
+                }
+            )
+    return {"sensors": registered, "count": len(registered)}
+
+
 def fetch_sensor_noise(ip: str, port: int) -> tuple[int | None, float | None]:
+    """
+    从传感器获取 RMS 值或原始 dB 值
+    兼容两种格式：
+    1. 新格式（推荐）: {"id": 1, "rms": 0.1234}  → 转换为 dB
+    2. 旧格式（兼容）: {"id": 1, "noise": 55.3}  → 直接使用
+    """
     try:
         response = requests.get(f"http://{ip}:{port}/noise", timeout=REQUEST_TIMEOUT_SECONDS)
         response.raise_for_status()
@@ -193,11 +233,22 @@ def fetch_sensor_noise(ip: str, port: int) -> tuple[int | None, float | None]:
 
     try:
         sensor_id = int(payload.get("id"))
-        noise = float(payload.get("noise"))
+        
+        # 优先尝试读取 RMS 值（新格式）
+        if "rms" in payload:
+            rms = float(payload.get("rms"))
+            noise_db = rms_to_db(rms)
+            return sensor_id, noise_db
+        # 其次读取 noise 值（旧格式，兼容）
+        elif "noise" in payload:
+            noise = float(payload.get("noise"))
+            return sensor_id, noise
+        else:
+            return None, None
     except (TypeError, ValueError):
         return None, None
 
-    return sensor_id, noise
+    return sensor_id, None
 
 
 def poll_loop() -> None:

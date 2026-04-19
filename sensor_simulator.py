@@ -1,4 +1,5 @@
 import argparse
+import math
 import random
 import socket
 import threading
@@ -14,9 +15,11 @@ REGISTER_PATH = "/api/register"
 NOISE_PATH = "/noise"
 DEFAULT_BASE_PORT = 8000
 DEFAULT_SENSOR_COUNT = 10
-NOISE_MIN = 20.0
-NOISE_MAX = 100.0
-NOISE_STEP = 10.0
+
+# RMS 模拟范围 (0.0 ~ 1.0) - 更大的变化幅度
+RMS_MIN = 0.005
+RMS_MAX = 1.2
+RMS_STEP = 0.25  # 更大的步长，造成数据波动更明显
 
 
 @dataclass
@@ -43,21 +46,33 @@ def get_local_ip() -> str:
         return "127.0.0.1"
 
 
+def rms_to_db(rms: float) -> float:
+    """
+    将 RMS 值转换为分贝值（仅用于显示）
+    公式：dB = 20 * log10(rms + 1.0)
+    """
+    if rms < 0:
+        return 0.0
+    return 20.0 * math.log10(rms + 1.0)
+
+
 def create_sensor_app(runtime: SensorRuntime) -> None:
     @runtime.app.get(NOISE_PATH)
     def get_noise() -> dict:
+        """返回 RMS 值（新格式）"""
         with runtime.lock:
-            noise = runtime.current_noise
-        return {"id": runtime.sensor_id, "noise": noise}
+            rms = runtime.current_noise
+        return {"id": runtime.sensor_id, "rms": rms}
 
 
 def noise_loop(runtime: SensorRuntime, interval: float) -> None:
-    noise = random.uniform(NOISE_MIN, NOISE_MAX)
+    """模拟 RMS 值变化（范围 RMS_MIN ~ RMS_MAX）"""
+    rms = random.uniform(RMS_MIN, RMS_MAX)
     while True:
-        delta = random.uniform(-NOISE_STEP, NOISE_STEP)
-        noise = clamp(noise + delta, NOISE_MIN, NOISE_MAX)
+        delta = random.uniform(-RMS_STEP, RMS_STEP)
+        rms = clamp(rms + delta, RMS_MIN, RMS_MAX)
         with runtime.lock:
-            runtime.current_noise = round(noise, 2)
+            runtime.current_noise = round(rms, 4)
         time.sleep(interval)
 
 
@@ -105,16 +120,18 @@ def main() -> None:
     for offset in range(args.count):
         sensor_id = args.start_id + offset
         port = args.base_port + offset
+        rms = round(random.uniform(RMS_MIN, RMS_MAX), 4)
         runtime = SensorRuntime(
             sensor_id=sensor_id,
             port=port,
-            current_noise=round(random.uniform(NOISE_MIN, NOISE_MAX), 2),
+            current_noise=rms,
             lock=threading.Lock(),
             app=FastAPI(),
         )
         start_sensor(runtime, args.backend, ip, args.interval)
         runtimes.append(runtime)
-        print(f"started simulated sensor id={sensor_id} port={port} ip={ip}")
+        db_value = rms_to_db(rms)
+        print(f"started simulated sensor id={sensor_id} port={port} ip={ip} rms={rms:.4f} ({db_value:.1f} dB)")
 
     while True:
         time.sleep(10)

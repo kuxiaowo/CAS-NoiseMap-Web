@@ -162,6 +162,75 @@ body {
   font-size: 12px;
 }
 
+/* Sensor list collapsible card */
+.sensor-card-header {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sensor-count {
+  background: rgba(255,255,255,0.06);
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-weight: 700;
+  margin-left: 8px;
+}
+.sensor-list {
+  margin-top: 10px;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 220ms ease, opacity 180ms ease;
+  opacity: 0;
+}
+.sensor-list.expanded {
+  /* 显示最多 4 行：每行约 64px + gap 8px => 72px * 4 = 288px */
+  max-height: 320px;
+  opacity: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-right: 8px;
+}
+
+/* 自定义滚动条样式 */
+.sensor-list.expanded::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sensor-list.expanded::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 999px;
+}
+
+.sensor-list.expanded::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+}
+
+.sensor-list.expanded::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.24);
+}
+.sensor-list-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sensor-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.02);
+  border: 1px solid rgba(255,255,255,0.03);
+  min-height: 48px;
+}
+.sensor-left { display:flex; flex-direction:column; gap:4px }
+.sensor-ip { font-size:12px; color:var(--muted) }
+.sensor-right { display:flex; align-items:center; gap:8px }
+.sensor-lastseen { text-align:right }
+
 @keyframes pulse {
   0% {
     box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7);

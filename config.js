@@ -1,6 +1,7 @@
 const CONFIG = {
   endpoint: `http://${location.hostname}:9880/api/points`,
   statusEndpoint: `http://${location.hostname}:9880/api/status`,
+  devicesEndpoint: `http://${location.hostname}:9880/api/devices`,
   pollIntervalMs: 2000,
   scale: 2,
   pointRadius: 6,
