@@ -1,4 +1,5 @@
 #include <WiFi.h>
+#include <esp_wifi.h>
 #include <HTTPClient.h>
 #include <WebServer.h>
 #include <Preferences.h>
@@ -6,12 +7,12 @@
 
 /* ================= 配置区 ================= */
 
-#define WIFI_SSID     "酷小我的Pura 70 Pro"
-#define WIFI_PASS     "11110000"
+#define WIFI_SSID     "SDGJ"
+#define WIFI_PASS     ""
 
-#define DEVICE_ID     2
+#define DEVICE_ID     3
 
-#define SERVER_IP     "192.168.43.252"
+#define SERVER_IP     "172.21.6.2"
 #define SERVER_PORT   9880
 #define ADMIN_PASSWORD "187geufo"
 
@@ -290,7 +291,7 @@ void handleNoise() {
 void connectWiFiUntilSuccess() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(wifiSsid.c_str(), wifiPass.c_str());
-
+  esp_wifi_set_ps(WIFI_PS_NONE);
   Serial.printf("正在连接 WiFi: %s\n", wifiSsid.c_str());
 
   int dots = 0;

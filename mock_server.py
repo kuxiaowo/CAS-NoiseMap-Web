@@ -17,7 +17,7 @@ BASE_DIR = Path(__file__).parent.resolve()
 POSITIONS_PATH = BASE_DIR / "sensor_positions.json"
 CALIBRATION_PATH = BASE_DIR / "sensor_calibration.json"
 API_PREFIX = "/api"
-POLL_INTERVAL_SECONDS = 0.5
+POLL_INTERVAL_SECONDS = 0.2
 MAX_SENSOR_ID = 100
 REQUEST_TIMEOUT_SECONDS = 3
 
