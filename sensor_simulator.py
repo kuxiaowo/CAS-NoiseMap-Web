@@ -1,34 +1,28 @@
 import argparse
-import math
 import random
 import socket
 import threading
 import time
 from dataclasses import dataclass
 
-from fastapi import FastAPI
 import requests
-import uvicorn
 
 DEFAULT_BACKEND = "http://127.0.0.1:9880"
-REGISTER_PATH = "/api/register"
-NOISE_PATH = "/noise"
-DEFAULT_BASE_PORT = 8000
+UPLOAD_PATH = "/api/upload"
+DEVICE_CONFIG_PATH = "/api/device-config"
 DEFAULT_SENSOR_COUNT = 10
-
-# RMS 模拟范围 (0.0 ~ 1.0) - 更大的变化幅度
-RMS_MIN = 0.005
-RMS_MAX = 1.2
-RMS_STEP = 0.25  # 更大的步长，造成数据波动更明显
+DEFAULT_REPORT_INTERVAL_MS = 1000
+RMS_MIN = 6.0
+RMS_MAX = 160.0
+RMS_STEP = 12.0
 
 
 @dataclass
 class SensorRuntime:
     sensor_id: int
-    port: int
-    current_noise: float
-    lock: threading.Lock
-    app: FastAPI
+    current_rms: float
+    report_interval_ms: int
+    enabled: bool = True
 
 
 def clamp(value: float, minimum: float, maximum: float) -> float:
@@ -46,69 +40,64 @@ def get_local_ip() -> str:
         return "127.0.0.1"
 
 
-def rms_to_db(rms: float) -> float:
-    """
-    将 RMS 值转换为分贝值（仅用于显示）
-    公式：dB = 20 * log10(rms + 1.0)
-    """
-    if rms < 0:
-        return 0.0
-    return 20.0 * math.log10(rms + 1.0)
-
-
-def create_sensor_app(runtime: SensorRuntime) -> None:
-    @runtime.app.get(NOISE_PATH)
-    def get_noise() -> dict:
-        """返回 RMS 值（新格式）"""
-        with runtime.lock:
-            rms = runtime.current_noise
-        return {"id": runtime.sensor_id, "rms": rms}
-
-
-def noise_loop(runtime: SensorRuntime, interval: float) -> None:
-    """模拟 RMS 值变化（范围 RMS_MIN ~ RMS_MAX）"""
-    rms = random.uniform(RMS_MIN, RMS_MAX)
-    while True:
-        delta = random.uniform(-RMS_STEP, RMS_STEP)
-        rms = clamp(rms + delta, RMS_MIN, RMS_MAX)
-        with runtime.lock:
-            runtime.current_noise = round(rms, 4)
-        time.sleep(interval)
-
-
-def register_sensor(backend: str, sensor_id: int, ip: str, port: int) -> None:
-    url = f"{backend}{REGISTER_PATH}"
-    payload = {"id": sensor_id, "ip": ip, "port": port}
-    response = requests.post(url, json=payload, timeout=3)
+def fetch_device_config(backend: str, runtime: SensorRuntime) -> None:
+    response = requests.get(
+        f"{backend}{DEVICE_CONFIG_PATH}",
+        params={"id": runtime.sensor_id},
+        timeout=3,
+    )
     response.raise_for_status()
+    payload = response.json()
+    runtime.enabled = bool(payload.get("enabled", True))
+    runtime.report_interval_ms = max(200, int(payload.get("report_interval_ms", runtime.report_interval_ms)))
 
 
-def run_sensor_server(runtime: SensorRuntime) -> None:
-    config = uvicorn.Config(runtime.app, host="0.0.0.0", port=runtime.port, log_level="warning")
-    server = uvicorn.Server(config)
-    server.run()
+def upload_loop(runtime: SensorRuntime, backend: str, ip: str) -> None:
+    rms = runtime.current_rms
+    last_sync = 0.0
 
+    while True:
+        now = time.time()
+        if now - last_sync >= 5:
+            try:
+                fetch_device_config(backend, runtime)
+            except Exception:
+                pass
+            last_sync = now
 
-def start_sensor(runtime: SensorRuntime, backend: str, ip: str, interval: float) -> None:
-    create_sensor_app(runtime)
-    register_sensor(backend, runtime.sensor_id, ip, runtime.port)
+        rms = clamp(rms + random.uniform(-RMS_STEP, RMS_STEP), RMS_MIN, RMS_MAX)
+        runtime.current_rms = round(rms, 2)
 
-    noise_worker = threading.Thread(target=noise_loop, args=(runtime, interval), daemon=True)
-    noise_worker.start()
+        if runtime.enabled:
+            payload = {
+                "id": runtime.sensor_id,
+                "ip": ip,
+                "raw_rms": runtime.current_rms,
+                "sample_min": int(-runtime.current_rms * 20),
+                "sample_max": int(runtime.current_rms * 20),
+                "uptime_ms": int(time.monotonic() * 1000),
+                "wifi_rssi": -45,
+            }
+            try:
+                response = requests.post(f"{backend}{UPLOAD_PATH}", json=payload, timeout=3)
+                response.raise_for_status()
+                response_payload = response.json()
+                device = response_payload.get("device") or {}
+                runtime.enabled = bool(device.get("enabled", runtime.enabled))
+                runtime.report_interval_ms = max(200, int(device.get("report_interval_ms", runtime.report_interval_ms)))
+            except Exception:
+                pass
 
-    server_worker = threading.Thread(target=run_sensor_server, args=(runtime,), daemon=True)
-    server_worker.start()
-
+        time.sleep(runtime.report_interval_ms / 1000.0)
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Noise sensor simulator")
+    parser = argparse.ArgumentParser(description="CAS active-upload sensor simulator")
     parser.add_argument("--backend", type=str, default=DEFAULT_BACKEND, help="Backend base URL")
-    parser.add_argument("--ip", type=str, default="", help="IP to register")
-    parser.add_argument("--interval", type=float, default=1.0, help="Noise update interval")
+    parser.add_argument("--ip", type=str, default="", help="IP to report")
     parser.add_argument("--count", type=int, default=DEFAULT_SENSOR_COUNT, help="How many simulated sensors to start")
     parser.add_argument("--start-id", type=int, default=1, help="First sensor id")
-    parser.add_argument("--base-port", type=int, default=DEFAULT_BASE_PORT, help="First sensor port")
+    parser.add_argument("--interval", type=int, default=DEFAULT_REPORT_INTERVAL_MS, help="Initial report interval in ms")
     return parser.parse_args()
 
 
@@ -119,19 +108,15 @@ def main() -> None:
     runtimes: list[SensorRuntime] = []
     for offset in range(args.count):
         sensor_id = args.start_id + offset
-        port = args.base_port + offset
-        rms = round(random.uniform(RMS_MIN, RMS_MAX), 4)
         runtime = SensorRuntime(
             sensor_id=sensor_id,
-            port=port,
-            current_noise=rms,
-            lock=threading.Lock(),
-            app=FastAPI(),
+            current_rms=round(random.uniform(RMS_MIN, RMS_MAX), 2),
+            report_interval_ms=max(200, args.interval),
         )
-        start_sensor(runtime, args.backend, ip, args.interval)
+        worker = threading.Thread(target=upload_loop, args=(runtime, args.backend, ip), daemon=True)
+        worker.start()
         runtimes.append(runtime)
-        db_value = rms_to_db(rms)
-        print(f"started simulated sensor id={sensor_id} port={port} ip={ip} rms={rms:.4f} ({db_value:.1f} dB)")
+        print(f"started simulated sensor id={sensor_id} ip={ip} interval={runtime.report_interval_ms}ms")
 
     while True:
         time.sleep(10)

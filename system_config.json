@@ -1,0 +1,22 @@
+{
+  "frontend": {
+    "poll_interval_ms": 1000,
+    "scale": 2,
+    "point_radius": 6,
+    "influence_radius": 90,
+    "influence_opacity": 0.26,
+    "map_image": "map.png",
+    "map_anchor": { "x": 800, "y": 780 },
+    "map_scale": 0.5,
+    "outside_color": "#d7dde7",
+    "axis_color": "rgba(140, 154, 179, 0.45)",
+    "show_labels": true,
+    "glow_intensity": 1,
+    "grid_enabled": false,
+    "legend": [
+      { "label": "低噪音", "color": [0, 200, 0], "desc": "< 55" },
+      { "label": "中噪音", "color": [255, 200, 0], "desc": "55 - 75" },
+      { "label": "高噪音", "color": [255, 0, 0], "desc": ">= 75" }
+    ]
+  }
+}

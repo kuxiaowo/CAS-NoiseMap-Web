@@ -1,72 +1,120 @@
-# CAS-NoiseMap-Web Rewrite
+# CAS-NoiseMap-Web
 
-这是按现有 ESP32 接入方式重写的一版更规范的噪音地图原型。
-## 更新内容
-- 增加了设备列表显示
-- 将分贝计算逻辑更改到后端处理
-## 设计目标
-- 不修改现有硬件侧协议
-- 仍然由硬件上传 `id`，后端按 `id -> 坐标` 映射
-- 颜色在后端判断，前端只负责显示
-- 保持轻量，继续使用静态前端 + Python 后端
+这是重构后的 CAS 噪音地图原型，当前架构改为：
+
+- **ESP 主动上报**，不再由服务器高频轮询设备
+- **后端集中保存配置**，前端改完立即写入配置文件并实时生效
+- **前端同时负责地图展示和传感器管理**
 
 ## 当前链路
-1. ESP32 启动后向后端 `POST /api/register`
-2. 后端记录传感器 `id -> ip`
-3. 后端定时访问 `http://<sensor_ip>:8000/noise`
-4. 后端根据传感器 `id` 查找坐标，根据噪音值计算颜色
-5. 前端请求 `/api/points` 并渲染地图、点位、影响范围
 
-## 文件说明
-- `index.html` 页面入口
-- `style.css` 页面样式
-- `config.js` 前端显示参数
-- `app.js` 前端渲染逻辑
-- `mock_server.py` 后端服务，负责注册、轮询、坐标映射、颜色判断
-- `serve_web.py` 静态文件服务
-- `sensor_simulator.py` 本地模拟传感器
-- `sensor_positions.json` 传感器坐标配置
-- `map.png` 地图背景图
+1. ESP 启动后连接 WiFi
+2. ESP 本地管理页可修改 WiFi、服务器地址、设备 ID、本地上报频率
+3. ESP 定时向后端 `POST /api/upload`
+4. 后端根据传感器配置完成：
+   - 启用/禁用
+   - 上报频率下发
+   - 坐标映射
+   - 校准换算
+   - 在线状态判断
+5. 前端请求后端 API 渲染地图，并提供传感器管理面板
+
+## 主要文件
+
+- `index.html` 前端页面入口
+- `style.css` 前端样式
+- `config.js` 前端 API 基础配置
+- `app.js` 地图渲染与传感器管理逻辑
+- `mock_server.py` 后端服务
+- `sensor_simulator.py` 主动上报模式的本地模拟器
+- `sensors.json` 传感器配置文件
+- `system_config.json` 前端显示配置文件
+- `ESP32_12S/ESP32_12S.ino` ESP32 固件
+- `ESP32-C3_12S/ESP32-C3_12S.ino` ESP32-C3 固件
+
+## 后端依赖
+
+建议使用已安装的 Miniconda Python：
+
+```bash
+/home/kuxiaowo/miniconda3/bin/pip install fastapi uvicorn requests
+```
 
 ## 运行方式
+
 ### 1. 启动后端
+
 ```bash
-python mock_server.py
+/home/kuxiaowo/miniconda3/bin/python mock_server.py
 ```
+
 默认监听 `0.0.0.0:9880`
 
-### 2. 启动前端静态服务
+### 2. 启动静态前端
+
 ```bash
-python serve_web.py
+python3 serve_web.py
 ```
+
 默认监听 `0.0.0.0:8080`
 
 ### 3. 浏览器访问
+
 ```bash
 http://<server-ip>:8080
 ```
 
-### 4. 如果没有真实硬件，可用模拟器
+### 4. 无硬件时启动模拟器
+
 ```bash
-python sensor_simulator.py --id 1 --backend http://127.0.0.1:9880
+/home/kuxiaowo/miniconda3/bin/python sensor_simulator.py --backend http://127.0.0.1:9880 --count 5
 ```
 
-## 依赖
-```bash
-pip install fastapi uvicorn requests
-```
+## 关键接口
 
-## 坐标配置
-请编辑 `sensor_positions.json`，按传感器 `id` 配置真实坐标：
+### 设备侧
 
-```json
-{
-  "1": { "x": 120, "y": 80, "label": "传感器1" },
-  "2": { "x": 220, "y": 60, "label": "传感器2" }
-}
-```
+- `POST /api/upload`
+- `GET /api/device-config?id=<sensor_id>`
 
-## 注意
-- 颜色阈值在后端统一定义
-- 前端不再根据噪音值自行判断颜色
-- 如果某个传感器已注册但没有配置坐标，后端会跳过，不渲染到地图上
+### 前端侧
+
+- `GET /api/points`
+- `GET /api/devices`
+- `GET /api/config`
+- `POST /api/sensors`
+- `PATCH /api/sensors/<id>`
+- `DELETE /api/sensors/<id>`
+
+## 配置文件说明
+
+> 注释说明文件：
+> - `sensors.comments.md`
+> - `system_config.comments.md`
+>
+> 之所以单独放说明文件，而不是直接写进 `.json`，是因为当前后端按标准 JSON 解析，JSON 本身不支持注释。
+
+### `sensors.json`
+保存：
+
+- 传感器启用状态
+- 坐标
+- 标签
+- 上报频率
+- 校准参数
+- 颜色阈值
+
+### `system_config.json`
+保存：
+
+- 前端轮询频率
+- 地图缩放与锚点
+- 热区半径
+- 图例配置
+
+## 当前实现说明
+
+- 后端配置修改后会立即写盘并实时生效
+- 传感器禁用后，地图会立刻停止渲染该点
+- 设备仍会周期同步远端配置，因此前端调整上报频率和启用状态后，设备会在下一轮同步后跟上
+- 本地 ESP 管理页里的上报频率是**本地默认值/兜底值**，后端配置可覆盖它

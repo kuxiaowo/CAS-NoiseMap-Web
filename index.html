@@ -25,7 +25,7 @@
 
     <div class="hud-card" id="sensorCard">
       <div class="card-title sensor-card-header" id="sensorCardHeader" role="button" tabindex="0">
-        已注册设备 <span id="sensorCount" class="sensor-count">0</span>
+        设备概览 <span id="sensorCount" class="sensor-count">0</span>
       </div>
       <div id="sensorList" class="sensor-list collapsed" aria-hidden="true">加载中…</div>
     </div>
@@ -52,6 +52,44 @@
     <div class="hud-card">
       <div class="card-title">颜色说明</div>
       <div id="legend" class="legend-list"></div>
+    </div>
+  </aside>
+
+  <aside class="admin-panel">
+    <div class="admin-card admin-header-card">
+      <div>
+        <div class="eyebrow">Control Panel</div>
+        <h2>传感器管理</h2>
+      </div>
+      <button id="reloadAdminButton" class="secondary-button" type="button">刷新</button>
+    </div>
+
+    <div class="admin-card admin-summary-card">
+      <div class="admin-section-title">管理概览</div>
+      <div id="adminSummary" class="admin-summary-grid">
+        <div class="summary-chip"><span>总数</span><strong>0</strong></div>
+        <div class="summary-chip"><span>启用</span><strong>0</strong></div>
+        <div class="summary-chip"><span>在线</span><strong>0</strong></div>
+        <div class="summary-chip"><span>离线/禁用</span><strong>0</strong></div>
+      </div>
+      <div class="inline-form search-row">
+        <input id="adminSearchInput" type="text" placeholder="按 ID 或标签筛选" />
+      </div>
+    </div>
+
+    <div class="admin-card admin-add-card">
+      <div class="admin-section-title">新增传感器</div>
+      <div class="inline-form">
+        <input id="newSensorId" type="number" min="0" max="100" placeholder="ID" />
+        <button id="addSensorButton" type="button">新增</button>
+      </div>
+      <div class="admin-help">新增后可以直接在下方修改坐标、上报频率和校准参数。</div>
+    </div>
+
+    <div class="admin-card admin-list-card">
+      <div class="admin-section-title">传感器配置</div>
+      <div class="mini-help">点标题可展开或收起详细参数，默认全部收起；列表区域支持滚动。</div>
+      <div id="adminSensorList" class="admin-sensor-list">加载中…</div>
     </div>
   </aside>
 

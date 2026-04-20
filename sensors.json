@@ -1,0 +1,84 @@
+{
+  "defaults": {
+    "enabled": true,
+    "label_prefix": "传感器 ",
+    "report_interval_ms": 1000,
+    "x": 0,
+    "y": 0,
+    "reference_raw_rms": 120.0,
+    "reference_db": 60.0,
+    "noise_floor_raw_rms": 8.0,
+    "min_db": 30.0,
+    "max_db": 130.0
+  },
+  "thresholds": [
+    {
+      "max": 55.0,
+      "rgb": [
+        0,
+        200,
+        0
+      ],
+      "name": "green"
+    },
+    {
+      "max": 75.0,
+      "rgb": [
+        255,
+        200,
+        0
+      ],
+      "name": "yellow"
+    },
+    {
+      "max": 1000000.0,
+      "rgb": [
+        255,
+        0,
+        0
+      ],
+      "name": "red"
+    }
+  ],
+  "sensors": {
+    "1": {
+      "id": 1,
+      "enabled": true,
+      "label": "传感器 1",
+      "x": 120.0,
+      "y": 80.0,
+      "report_interval_ms": 1000,
+      "reference_raw_rms": 20.0,
+      "reference_db": 60.0,
+      "noise_floor_raw_rms": 6.0,
+      "min_db": 30.0,
+      "max_db": 130.0
+    },
+    "2": {
+      "id": 2,
+      "enabled": true,
+      "label": "传感器 2",
+      "x": 120.0,
+      "y": 40.0,
+      "report_interval_ms": 1000,
+      "reference_raw_rms": 22.0,
+      "reference_db": 60.0,
+      "noise_floor_raw_rms": 10.0,
+      "min_db": 30.0,
+      "max_db": 130.0
+    },
+    "3": {
+      "id": 3,
+      "enabled": true,
+      "label": "传感器 3",
+      "x": 380.0,
+      "y": -20.0,
+      "report_interval_ms": 1000,
+      "reference_raw_rms": 15.0,
+      "reference_db": 60.0,
+      "noise_floor_raw_rms": 4.5,
+      "min_db": 30.0,
+      "max_db": 130.0
+    }
+  }
+}
