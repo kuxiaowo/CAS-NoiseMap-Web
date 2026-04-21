@@ -56,21 +56,21 @@
       "id": 1,
       "enabled": true,
       "label": "传感器 1",
-      "x": 120.0,
-      "y": 80.0,
+      "x": -20.0,
+      "y": -30.0,
       "report_interval_ms": 1000,
       "calibration_points": [
         {
-          "db": 54.0,
-          "raw_rms": 13.0
-        },
-        {
           "db": 60.0,
-          "raw_rms": 20.0
+          "raw_rms": 23.0
         },
         {
-          "db": 66.0,
-          "raw_rms": 34.0
+          "db": 80.0,
+          "raw_rms": 175.0
+        },
+        {
+          "db": 90.0,
+          "raw_rms": 320.0
         }
       ],
       "min_db": 30.0,
@@ -80,21 +80,21 @@
       "id": 2,
       "enabled": true,
       "label": "传感器 2",
-      "x": 120.0,
-      "y": 40.0,
+      "x": -90.1,
+      "y": -120.0,
       "report_interval_ms": 1000,
       "calibration_points": [
         {
-          "db": 54.0,
+          "db": 60.0,
           "raw_rms": 16.0
         },
         {
-          "db": 60.0,
-          "raw_rms": 22.0
+          "db": 80.0,
+          "raw_rms": 70.0
         },
         {
-          "db": 66.0,
-          "raw_rms": 34.0
+          "db": 90.0,
+          "raw_rms": 200.0
         }
       ],
       "min_db": 30.0,
@@ -104,21 +104,21 @@
       "id": 3,
       "enabled": true,
       "label": "传感器 3",
-      "x": 380.0,
-      "y": -20.0,
+      "x": 49.9,
+      "y": -120.0,
       "report_interval_ms": 1000,
       "calibration_points": [
         {
-          "db": 54.0,
-          "raw_rms": 9.75
-        },
-        {
           "db": 60.0,
-          "raw_rms": 15.0
+          "raw_rms": 240.0
         },
         {
-          "db": 66.0,
-          "raw_rms": 25.5
+          "db": 80.0,
+          "raw_rms": 400.0
+        },
+        {
+          "db": 90.0,
+          "raw_rms": 850.0
         }
       ],
       "min_db": 30.0,

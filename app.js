@@ -17,6 +17,7 @@ const adminSearchInput = document.getElementById('adminSearchInput');
 const reloadAdminButton = document.getElementById('reloadAdminButton');
 const addSensorButton = document.getElementById('addSensorButton');
 const newSensorIdInput = document.getElementById('newSensorId');
+const togglePanelsButton = document.getElementById('togglePanelsButton');
 
 const API_BASE = (window.CONFIG?.apiBase || `${location.origin}/api`).replace(/\/$/, '');
 const ENDPOINTS = {
@@ -28,6 +29,7 @@ const ENDPOINTS = {
 };
 
 let sensorExpanded = false;
+let panelsHidden = localStorage.getItem('cas-panels-hidden') === '1';
 let frontendConfig = {
   poll_interval_ms: 1000,
   scale: 2,
@@ -57,6 +59,14 @@ mapImage.onload = () => {
   mapLoaded = true;
   render(lastPoints);
 };
+
+function syncPanelsVisibility() {
+  document.body.classList.toggle('panels-hidden', panelsHidden);
+  if (togglePanelsButton) {
+    togglePanelsButton.textContent = panelsHidden ? '显示面板' : '隐藏面板';
+    togglePanelsButton.setAttribute('aria-pressed', panelsHidden ? 'true' : 'false');
+  }
+}
 
 if (sensorCardHeaderEl) {
   const toggle = () => {
@@ -453,6 +463,12 @@ function renderAdminSummary(sensors) {
   `;
 }
 
+function isEditingAdminForm() {
+  const active = document.activeElement;
+  if (!active || !adminSensorListEl) return false;
+  return adminSensorListEl.contains(active) && Boolean(active.closest('form'));
+}
+
 function renderAdminSensors(sensors) {
   adminSensorListEl.innerHTML = '';
 
@@ -676,6 +692,7 @@ function renderAdminSensors(sensors) {
           body: JSON.stringify(payload),
         });
         message.textContent = '已保存';
+        form.reset();
         await reloadAdmin();
       } catch (error) {
         message.textContent = `保存失败: ${error.message}`;
@@ -728,7 +745,9 @@ async function refreshRuntime() {
 
     renderSensorList(sensors);
     renderAdminSummary(sensors);
-    renderAdminSensors(sensors);
+    if (!isEditingAdminForm()) {
+      renderAdminSensors(sensors);
+    }
 
     registeredCountEl.textContent = String(registeredCount);
     renderedCountEl.textContent = String(lastPoints.length);
@@ -759,6 +778,12 @@ reloadAdminButton?.addEventListener('click', () => {
   reloadAdmin();
 });
 
+togglePanelsButton?.addEventListener('click', () => {
+  panelsHidden = !panelsHidden;
+  localStorage.setItem('cas-panels-hidden', panelsHidden ? '1' : '0');
+  syncPanelsVisibility();
+});
+
 adminSearchInput?.addEventListener('input', (event) => {
   adminFilterText = String(event.target.value || '');
   renderAdminSensors(adminSensors);
@@ -787,5 +812,6 @@ addSensorButton?.addEventListener('click', async () => {
 });
 
 window.addEventListener('resize', resizeCanvas);
+syncPanelsVisibility();
 resizeCanvas();
 loadAdminConfig().then(refreshRuntime);

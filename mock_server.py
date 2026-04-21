@@ -377,7 +377,7 @@ def build_device_view(sensor_id: int) -> dict[str, Any]:
 
 def build_point(sensor_id: int) -> dict[str, Any] | None:
     device = build_device_view(sensor_id)
-    if not device["enabled"] or device["last_noise"] is None:
+    if not device["enabled"] or not device["online"] or device["last_noise"] is None:
         return None
     return {
         "id": sensor_id,

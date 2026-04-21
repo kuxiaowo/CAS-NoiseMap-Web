@@ -33,6 +33,22 @@ body {
   height: 100vh;
 }
 
+.chrome-toggle-button {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  padding: 10px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(8, 14, 26, 0.84);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--text);
+  box-shadow: var(--shadow);
+}
+
 .hud,
 .admin-panel {
   position: fixed;
@@ -41,6 +57,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .hud {
@@ -67,6 +84,20 @@ body {
 .admin-panel::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.12);
   border-radius: 999px;
+}
+
+body.panels-hidden .hud,
+body.panels-hidden .admin-panel {
+  opacity: 0;
+  pointer-events: none;
+}
+
+body.panels-hidden .hud {
+  transform: translateX(-24px);
+}
+
+body.panels-hidden .admin-panel {
+  transform: translateX(24px);
 }
 
 .hud-card,
@@ -575,6 +606,10 @@ button:disabled {
 @media (max-width: 1320px) {
   body {
     overflow: auto;
+  }
+
+  .chrome-toggle-button {
+    top: 12px;
   }
 
   .hud,
