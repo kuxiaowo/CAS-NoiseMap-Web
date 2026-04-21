@@ -51,10 +51,8 @@ body {
 .admin-panel {
   right: 16px;
   width: min(460px, calc(100vw - 32px));
-  max-height: calc(100vh - 32px);
-  overflow-y: auto;
-  overflow-x: hidden;
-  padding-right: 4px;
+  height: calc(100vh - 32px);
+  overflow: hidden;
 }
 
 .admin-panel::-webkit-scrollbar {
@@ -220,7 +218,7 @@ body {
   background: rgba(255,255,255,0.04);
 }
 
-.admin-sensor-item.collapsed form {
+.admin-sensor-item.collapsed .admin-sensor-content {
   display: none;
 }
 
@@ -294,6 +292,10 @@ button:active {
 
 .admin-list-card {
   min-height: 220px;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
 }
 
 .admin-panel .mini-help {
@@ -414,14 +416,15 @@ button:active {
 
 .admin-list-card {
   overflow: hidden;
-  min-height: 0;
-  flex: 1;
 }
 
 .admin-sensor-list {
-  overflow: auto;
-  max-height: calc(100vh - 220px);
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding-right: 6px;
+  overscroll-behavior: contain;
 }
 
 .admin-sensor-header,
@@ -482,6 +485,15 @@ input[type="number"] {
 input[type="checkbox"] {
   width: 16px;
   height: 16px;
+}
+
+input:disabled,
+textarea:disabled {
+  opacity: 1;
+  color: var(--text);
+  -webkit-text-fill-color: var(--text);
+  background: rgba(8, 16, 30, 0.72);
+  cursor: default;
 }
 
 button {
@@ -569,6 +581,7 @@ button:disabled {
   .admin-panel {
     position: static;
     width: auto;
+    height: auto;
     max-height: none;
     margin: 12px;
   }
@@ -584,7 +597,12 @@ button:disabled {
     z-index: 20;
   }
 
+  .admin-list-card {
+    flex: none;
+    min-height: 320px;
+  }
+
   .admin-sensor-list {
-    max-height: none;
+    max-height: 60vh;
   }
 }

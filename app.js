@@ -402,7 +402,7 @@ function renderSensorList(sensors) {
   sensorListEl.appendChild(list);
 }
 
-function createNumberField(labelText, name, value, step = '1') {
+function createNumberField(labelText, name, value, step = '1', disabled = false) {
   const field = document.createElement('div');
   field.className = 'field';
 
@@ -414,13 +414,14 @@ function createNumberField(labelText, name, value, step = '1') {
   input.name = name;
   input.step = step;
   input.value = value ?? '';
+  input.disabled = disabled;
 
   field.appendChild(label);
   field.appendChild(input);
   return field;
 }
 
-function createTextField(labelText, name, value) {
+function createTextField(labelText, name, value, disabled = false) {
   const field = document.createElement('div');
   field.className = 'field wide';
 
@@ -431,6 +432,7 @@ function createTextField(labelText, name, value) {
   input.type = 'text';
   input.name = name;
   input.value = value ?? '';
+  input.disabled = disabled;
 
   field.appendChild(label);
   field.appendChild(input);
@@ -523,6 +525,7 @@ function renderAdminSensors(sensors) {
     header.appendChild(badge);
 
     const form = document.createElement('form');
+    form.className = 'admin-sensor-content';
     form.dataset.sensorId = String(sensor.id);
 
     const row1 = document.createElement('div');
@@ -551,16 +554,30 @@ function renderAdminSensors(sensors) {
     row2.appendChild(createNumberField('Y 坐标', 'y', sensor.y, '0.1'));
     row2.appendChild(createNumberField('上报频率(ms)', 'report_interval_ms', sensor.report_interval_ms, '100'));
 
+    const calibrationPoints = Array.isArray(sensor.calibration_points) ? sensor.calibration_points.slice(0, 3) : [];
+    while (calibrationPoints.length < 3) {
+      calibrationPoints.push({ db: '', raw_rms: '' });
+    }
+
     const row3 = document.createElement('div');
     row3.className = 'form-grid';
-    row3.appendChild(createNumberField('参考原始 RMS', 'reference_raw_rms', sensor.reference_raw_rms, '0.1'));
-    row3.appendChild(createNumberField('参考分贝', 'reference_db', sensor.reference_db, '0.1'));
-    row3.appendChild(createNumberField('噪声底噪', 'noise_floor_raw_rms', sensor.noise_floor_raw_rms, '0.1'));
+    row3.appendChild(createNumberField('校准点1 dB', 'calibration_point_1_db', calibrationPoints[0].db, '0.1'));
+    row3.appendChild(createNumberField('校准点1 RMS', 'calibration_point_1_raw_rms', calibrationPoints[0].raw_rms, '0.1'));
 
     const row4 = document.createElement('div');
     row4.className = 'form-grid';
-    row4.appendChild(createNumberField('最小 dB', 'min_db', sensor.min_db, '0.1'));
-    row4.appendChild(createNumberField('最大 dB', 'max_db', sensor.max_db, '0.1'));
+    row4.appendChild(createNumberField('校准点2 dB', 'calibration_point_2_db', calibrationPoints[1].db, '0.1'));
+    row4.appendChild(createNumberField('校准点2 RMS', 'calibration_point_2_raw_rms', calibrationPoints[1].raw_rms, '0.1'));
+
+    const row5 = document.createElement('div');
+    row5.className = 'form-grid';
+    row5.appendChild(createNumberField('校准点3 dB', 'calibration_point_3_db', calibrationPoints[2].db, '0.1'));
+    row5.appendChild(createNumberField('校准点3 RMS', 'calibration_point_3_raw_rms', calibrationPoints[2].raw_rms, '0.1'));
+
+    const row6 = document.createElement('div');
+    row6.className = 'form-grid';
+    row6.appendChild(createNumberField('最小 dB', 'min_db', sensor.min_db, '0.1'));
+    row6.appendChild(createNumberField('最大 dB', 'max_db', sensor.max_db, '0.1'));
 
     const actions = document.createElement('div');
     actions.className = 'admin-actions';
@@ -619,6 +636,8 @@ function renderAdminSensors(sensors) {
     form.appendChild(row2);
     form.appendChild(row3);
     form.appendChild(row4);
+    form.appendChild(row5);
+    form.appendChild(row6);
     form.appendChild(actions);
     form.appendChild(saveHint);
     form.appendChild(message);
@@ -628,15 +647,24 @@ function renderAdminSensors(sensors) {
       saveButton.disabled = true;
       message.textContent = '保存中...';
       const formData = new FormData(form);
+      const calibrationPayload = [1, 2, 3].map((index) => ({
+        db: Number(formData.get(`calibration_point_${index}_db`) || 0),
+        raw_rms: Number(formData.get(`calibration_point_${index}_raw_rms`) || 0),
+      }));
+
+      if (calibrationPayload.some((point) => !Number.isFinite(point.db) || !Number.isFinite(point.raw_rms) || point.raw_rms <= 0)) {
+        message.textContent = '保存失败: 三个校准点都要填写有效的 dB 和大于 0 的 RMS';
+        saveButton.disabled = false;
+        return;
+      }
+
       const payload = {
         label: String(formData.get('label') || '').trim(),
         enabled: enabledInput.checked,
         x: Number(formData.get('x') || 0),
         y: Number(formData.get('y') || 0),
         report_interval_ms: Number(formData.get('report_interval_ms') || 1000),
-        reference_raw_rms: Number(formData.get('reference_raw_rms') || 120),
-        reference_db: Number(formData.get('reference_db') || 60),
-        noise_floor_raw_rms: Number(formData.get('noise_floor_raw_rms') || 8),
+        calibration_points: calibrationPayload,
         min_db: Number(formData.get('min_db') || 30),
         max_db: Number(formData.get('max_db') || 130),
       };
@@ -708,7 +736,7 @@ async function refreshRuntime() {
     updatedTimeEl.textContent = lastUpdated.toLocaleTimeString();
 
     statusEl.textContent = `系统运行正常，当前已渲染 ${lastPoints.length} 个启用中的传感器点位`;
-    subStatusEl.textContent = '地图参数、坐标、校准、启用状态都由后端配置文件统一管理';
+    subStatusEl.textContent = '网页端可直接修改传感器配置，保存后会立刻写入后端配置文件';
     liveDotEl.style.background = onlineCount > 0 ? '#4ade80' : '#f59e0b';
   } catch (error) {
     statusEl.textContent = `获取失败: ${error.message}`;

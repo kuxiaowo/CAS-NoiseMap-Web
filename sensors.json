@@ -5,9 +5,20 @@
     "report_interval_ms": 1000,
     "x": 0,
     "y": 0,
-    "reference_raw_rms": 120.0,
-    "reference_db": 60.0,
-    "noise_floor_raw_rms": 8.0,
+    "calibration_points": [
+      {
+        "db": 54.0,
+        "raw_rms": 64.0
+      },
+      {
+        "db": 60.0,
+        "raw_rms": 120.0
+      },
+      {
+        "db": 66.0,
+        "raw_rms": 232.0
+      }
+    ],
     "min_db": 30.0,
     "max_db": 130.0
   },
@@ -48,9 +59,20 @@
       "x": 120.0,
       "y": 80.0,
       "report_interval_ms": 1000,
-      "reference_raw_rms": 20.0,
-      "reference_db": 60.0,
-      "noise_floor_raw_rms": 6.0,
+      "calibration_points": [
+        {
+          "db": 54.0,
+          "raw_rms": 13.0
+        },
+        {
+          "db": 60.0,
+          "raw_rms": 20.0
+        },
+        {
+          "db": 66.0,
+          "raw_rms": 34.0
+        }
+      ],
       "min_db": 30.0,
       "max_db": 130.0
     },
@@ -61,9 +83,20 @@
       "x": 120.0,
       "y": 40.0,
       "report_interval_ms": 1000,
-      "reference_raw_rms": 22.0,
-      "reference_db": 60.0,
-      "noise_floor_raw_rms": 10.0,
+      "calibration_points": [
+        {
+          "db": 54.0,
+          "raw_rms": 16.0
+        },
+        {
+          "db": 60.0,
+          "raw_rms": 22.0
+        },
+        {
+          "db": 66.0,
+          "raw_rms": 34.0
+        }
+      ],
       "min_db": 30.0,
       "max_db": 130.0
     },
@@ -74,9 +107,20 @@
       "x": 380.0,
       "y": -20.0,
       "report_interval_ms": 1000,
-      "reference_raw_rms": 15.0,
-      "reference_db": 60.0,
-      "noise_floor_raw_rms": 4.5,
+      "calibration_points": [
+        {
+          "db": 54.0,
+          "raw_rms": 9.75
+        },
+        {
+          "db": 60.0,
+          "raw_rms": 15.0
+        },
+        {
+          "db": 66.0,
+          "raw_rms": 25.5
+        }
+      ],
       "min_db": 30.0,
       "max_db": 130.0
     }

@@ -59,7 +59,7 @@
     <div class="admin-card admin-header-card">
       <div>
         <div class="eyebrow">Control Panel</div>
-        <h2>传感器管理</h2>
+        <h2>传感器配置</h2>
       </div>
       <button id="reloadAdminButton" class="secondary-button" type="button">刷新</button>
     </div>
@@ -75,6 +75,7 @@
       <div class="inline-form search-row">
         <input id="adminSearchInput" type="text" placeholder="按 ID 或标签筛选" />
       </div>
+      <div class="admin-help">可直接在网页端修改配置。三点校准请分别填写 3 组 dB 与 RMS。</div>
     </div>
 
     <div class="admin-card admin-add-card">
@@ -83,12 +84,12 @@
         <input id="newSensorId" type="number" min="0" max="100" placeholder="ID" />
         <button id="addSensorButton" type="button">新增</button>
       </div>
-      <div class="admin-help">新增后可以直接在下方修改坐标、上报频率和校准参数。</div>
+      <div class="admin-help">新增后可直接在下方修改坐标、上报频率和三点校准参数。</div>
     </div>
 
     <div class="admin-card admin-list-card">
       <div class="admin-section-title">传感器配置</div>
-      <div class="mini-help">点标题可展开或收起详细参数，默认全部收起；列表区域支持滚动。</div>
+      <div class="mini-help">点标题可展开或收起详细参数。列表区域始终可滚动，适配不同屏幕尺寸。</div>
       <div id="adminSensorList" class="admin-sensor-list">加载中…</div>
     </div>
   </aside>

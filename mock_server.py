@@ -22,6 +22,9 @@ API_PREFIX = "/api"
 MAX_SENSOR_ID = 100
 DEFAULT_DEVICE_PORT = 8000
 OFFLINE_GRACE_MS = 3000
+LEGACY_REFERENCE_RAW_RMS = 120.0
+LEGACY_REFERENCE_DB = 60.0
+LEGACY_NOISE_FLOOR_RAW_RMS = 8.0
 
 DEFAULT_SYSTEM_CONFIG = {
     "frontend": {
@@ -53,9 +56,11 @@ DEFAULT_SENSORS_CONFIG = {
         "report_interval_ms": 1000,
         "x": 0,
         "y": 0,
-        "reference_raw_rms": 120.0,
-        "reference_db": 60.0,
-        "noise_floor_raw_rms": 8.0,
+        "calibration_points": [
+            {"db": 54.0, "raw_rms": 64.0},
+            {"db": 60.0, "raw_rms": 120.0},
+            {"db": 66.0, "raw_rms": 232.0},
+        ],
         "min_db": 30.0,
         "max_db": 130.0,
     },
@@ -163,6 +168,7 @@ def load_sensors_config() -> dict[str, Any]:
     merged = deep_copy(DEFAULT_SENSORS_CONFIG)
     if isinstance(loaded.get("defaults"), dict):
         merged["defaults"].update(loaded["defaults"])
+    merged["defaults"]["calibration_points"] = normalize_calibration_points(merged["defaults"])
     if isinstance(loaded.get("thresholds"), list) and loaded["thresholds"]:
         merged["thresholds"] = loaded["thresholds"]
     if isinstance(loaded.get("sensors"), dict):
@@ -187,7 +193,7 @@ def save_sensors_config() -> None:
 
 
 def make_default_sensor(sensor_id: int) -> dict[str, Any]:
-    defaults = DEFAULT_SENSORS_CONFIG["defaults"]
+    defaults = sensors_config.get("defaults") if isinstance(sensors_config.get("defaults"), dict) else DEFAULT_SENSORS_CONFIG["defaults"]
     return {
         "id": sensor_id,
         "enabled": bool(defaults["enabled"]),
@@ -195,12 +201,48 @@ def make_default_sensor(sensor_id: int) -> dict[str, Any]:
         "x": float(defaults["x"]),
         "y": float(defaults["y"]),
         "report_interval_ms": int(defaults["report_interval_ms"]),
-        "reference_raw_rms": float(defaults["reference_raw_rms"]),
-        "reference_db": float(defaults["reference_db"]),
-        "noise_floor_raw_rms": float(defaults["noise_floor_raw_rms"]),
+        "calibration_points": deep_copy(defaults["calibration_points"]),
         "min_db": float(defaults["min_db"]),
         "max_db": float(defaults["max_db"]),
     }
+
+
+def build_legacy_calibration_points(raw: dict[str, Any]) -> list[dict[str, float]]:
+    reference_raw_rms = max(1.0, float(raw.get("reference_raw_rms", LEGACY_REFERENCE_RAW_RMS)))
+    reference_db = float(raw.get("reference_db", LEGACY_REFERENCE_DB))
+    noise_floor_raw_rms = max(0.0, float(raw.get("noise_floor_raw_rms", LEGACY_NOISE_FLOOR_RAW_RMS)))
+    effective_reference = max(reference_raw_rms - noise_floor_raw_rms, 1.0)
+    low_raw_rms = noise_floor_raw_rms + effective_reference * 0.5
+    high_raw_rms = noise_floor_raw_rms + effective_reference * 2.0
+    return [
+        {"db": round(reference_db - 6.0, 2), "raw_rms": round(low_raw_rms, 2)},
+        {"db": round(reference_db, 2), "raw_rms": round(reference_raw_rms, 2)},
+        {"db": round(reference_db + 6.0, 2), "raw_rms": round(high_raw_rms, 2)},
+    ]
+
+
+def normalize_calibration_points(raw: dict[str, Any]) -> list[dict[str, float]]:
+    points = []
+    raw_points = raw.get("calibration_points")
+    if isinstance(raw_points, list):
+        for point in raw_points:
+            if not isinstance(point, dict):
+                continue
+            try:
+                raw_rms = max(0.001, float(point.get("raw_rms")))
+                db = float(point.get("db"))
+            except (TypeError, ValueError):
+                continue
+            points.append({"db": round(db, 2), "raw_rms": round(raw_rms, 2)})
+
+    if len(points) < 3:
+        points = build_legacy_calibration_points(raw)
+
+    points = sorted(points[:3], key=lambda item: item["raw_rms"])
+    for index in range(1, len(points)):
+        if points[index]["raw_rms"] <= points[index - 1]["raw_rms"]:
+            points[index]["raw_rms"] = round(points[index - 1]["raw_rms"] + 0.01, 2)
+    return points
 
 
 def normalize_sensor_config(sensor_id: int, raw: dict[str, Any]) -> dict[str, Any]:
@@ -211,9 +253,7 @@ def normalize_sensor_config(sensor_id: int, raw: dict[str, Any]) -> dict[str, An
     sensor["x"] = float(raw.get("x", sensor["x"]))
     sensor["y"] = float(raw.get("y", sensor["y"]))
     sensor["report_interval_ms"] = max(200, int(raw.get("report_interval_ms", sensor["report_interval_ms"])))
-    sensor["reference_raw_rms"] = max(1.0, float(raw.get("reference_raw_rms", sensor["reference_raw_rms"])))
-    sensor["reference_db"] = float(raw.get("reference_db", sensor["reference_db"]))
-    sensor["noise_floor_raw_rms"] = max(0.0, float(raw.get("noise_floor_raw_rms", sensor["noise_floor_raw_rms"])))
+    sensor["calibration_points"] = normalize_calibration_points(raw)
     sensor["min_db"] = float(raw.get("min_db", sensor["min_db"]))
     sensor["max_db"] = float(raw.get("max_db", sensor["max_db"]))
     if sensor["max_db"] < sensor["min_db"]:
@@ -256,10 +296,38 @@ def get_thresholds() -> list[dict[str, Any]]:
 def raw_rms_to_db(raw_rms: float, sensor: dict[str, Any]) -> float:
     if raw_rms <= 0:
         return float(sensor["min_db"])
-    noise_floor = float(sensor["noise_floor_raw_rms"])
-    effective_raw = max(raw_rms - noise_floor, 1.0)
-    effective_reference = max(float(sensor["reference_raw_rms"]) - noise_floor, 1.0)
-    db = float(sensor["reference_db"]) + 20.0 * math.log10(effective_raw / effective_reference)
+
+    points = sensor.get("calibration_points")
+    if not isinstance(points, list) or len(points) < 2:
+        points = DEFAULT_SENSORS_CONFIG["defaults"]["calibration_points"]
+
+    points = sorted(points, key=lambda item: float(item["raw_rms"]))
+    if raw_rms <= float(points[0]["raw_rms"]):
+        left, right = points[0], points[1]
+    elif raw_rms >= float(points[-1]["raw_rms"]):
+        left, right = points[-2], points[-1]
+    else:
+        left, right = points[0], points[1]
+        for index in range(len(points) - 1):
+            current = points[index]
+            nxt = points[index + 1]
+            if float(current["raw_rms"]) <= raw_rms <= float(nxt["raw_rms"]):
+                left, right = current, nxt
+                break
+
+    left_raw = max(0.001, float(left["raw_rms"]))
+    right_raw = max(left_raw + 0.001, float(right["raw_rms"]))
+    left_db = float(left["db"])
+    right_db = float(right["db"])
+    left_log = math.log10(left_raw)
+    right_log = math.log10(right_raw)
+    raw_log = math.log10(max(0.001, raw_rms))
+
+    if right_log == left_log:
+        db = right_db
+    else:
+        ratio = (raw_log - left_log) / (right_log - left_log)
+        db = left_db + (right_db - left_db) * ratio
     return max(float(sensor["min_db"]), min(float(sensor["max_db"]), db))
 
 
@@ -288,9 +356,7 @@ def build_device_view(sensor_id: int) -> dict[str, Any]:
         "x": sensor["x"],
         "y": sensor["y"],
         "report_interval_ms": sensor["report_interval_ms"],
-        "reference_raw_rms": sensor["reference_raw_rms"],
-        "reference_db": sensor["reference_db"],
-        "noise_floor_raw_rms": sensor["noise_floor_raw_rms"],
+        "calibration_points": deep_copy(sensor["calibration_points"]),
         "min_db": sensor["min_db"],
         "max_db": sensor["max_db"],
         "online": online,
