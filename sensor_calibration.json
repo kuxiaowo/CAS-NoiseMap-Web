@@ -14,7 +14,7 @@
   "sensors": {
     "1": { "reference_raw_rms": 20.0, "reference_db": 60.0, "noise_floor_raw_rms": 6.0, "min_db": 30.0, "max_db": 130.0 },
     "2": { "reference_raw_rms": 22.0, "reference_db": 60.0, "noise_floor_raw_rms": 10.0, "min_db": 30.0, "max_db": 130.0 },
-    "3": { "reference_raw_rms": 15.0, "reference_db": 60.0, "noise_floor_raw_rms": 4.5, "min_db": 30.0, "max_db": 130.0 },
+    "3": { "reference_raw_rms": 15.0, "reference_db": 60.0, "noise_floor_raw_rms": 220, "min_db": 30.0, "max_db": 130.0 },
     "4": { "reference_raw_rms": 132.0, "reference_db": 60.0, "noise_floor_raw_rms": 10.0, "min_db": 30.0, "max_db": 130.0 },
     "5": { "reference_raw_rms": 124.0, "reference_db": 60.0, "noise_floor_raw_rms": 8.5, "min_db": 30.0, "max_db": 130.0 }
   }
